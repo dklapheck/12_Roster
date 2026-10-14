@@ -1,6 +1,7 @@
-/** 10RosterHR source refresh v1.7 (adds new students first). Replace the old RefreshStudentData file.
+/** 12RosterORN source refresh v1.8 (adds new students first).
  * @NotOnlyCurrentDoc
- * Requires Config.gs, RosterSync v1.3, RemoveStudents.gs, GradesImport.gs, StarImport.gs and AddStudents.gs v1.1.
+ * Requires Config.gs, MasterSave.gs, RemoveStudents.gs, GradesImport.gs, StarImport.gs and AddStudents.gs.
+ * v1.8: Master only (SCC, ECC and STAR were removed).
  * v1.7: after a saved refresh, Call Due colors are reapplied (CallDueColors.gs).
  * v1.7: Upstream GE_NEXT_CALL_DUE fills Call Due (a blank source keeps the cell).
  * v1.7: contacts are also filled for Master students not in Upstream yet, and the
@@ -14,13 +15,13 @@
  * test when blank (a value already in Master is kept). Latest Reading/Math
  * Date/Score take the newest test from STAR Import or Upstream STAR_2TO12_*.
  * If STAR Import is missing or unreadable, Upstream alone is used, as before.
- * Course grades from the CourseGrades tab are part of the Master refresh
- * (synced to SCC, ECC and STAR). The Grades tab is written after Master is
+ * Course grades from the CourseGrades tab are part of the Master refresh.
+ * The Grades tab is written after Master is
  * saved, under its own lock; a Grades tab problem is reported in the dialog and
  * never undoes the Master refresh. Menus are built by Menus.gs. Info!H2 holds the separate imports workbook URL.
- * Source is READ ONLY. Planner performs no writes; shared helper saves everything.
+ * Source is READ ONLY. The planner performs no writes; saveToMaster saves everything.
  */
-const HR10REFRESH = (() => {
+const STUDENT_REFRESH = (() => {
   const MAP = [
     ['STUDENT_LAST_NAME', 'LAST NAME'], ['STUDENT_FIRST_NAME', 'FIRST NAME'],
     ['GRADE', 'GRADE'], ['ENROLL_DATE_PS', 'START DATE'], ['SCHOOL', 'SCHOOL'],
@@ -34,14 +35,14 @@ const HR10REFRESH = (() => {
   const CONTACT_HEADERS = ['Student Number', 'Student Source Name', 'Gender', 'Student Phone',
     'Contact Name', 'Relationship', 'Source Phone', 'Source Email', 'Effective Phone',
     'Effective Email', 'Learning Coach', 'Contact Key'];
-  const text = v => HR10CFG.text(v);
-  const blank = v => HR10CFG.blank(v);
-  const same = (a, b) => HR10CFG.same(a, b);
-  const id = v => HR10CFG.studentId(v);
-  const book = () => HR10CFG.workbook();
-  const table = (sheet, required) => HR10CFG.table(sheet, required);
+  const text = v => CONFIG.text(v);
+  const blank = v => CONFIG.blank(v);
+  const same = (a, b) => CONFIG.same(a, b);
+  const id = v => CONFIG.studentId(v);
+  const book = () => CONFIG.workbook();
+  const table = (sheet, required) => CONFIG.table(sheet, required);
   function source(ss) {
-    const upstream = HR10CFG.sourceWorkbook(ss);
+    const upstream = CONFIG.sourceWorkbook(ss);
     const u = table(upstream.getSheetByName('Upstream'), ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT']);
     const p = table(upstream.getSheetByName('ProRoster'),
       ['Student Number', 'Name', 'Gender', 'Phone', 'Contact Name', 'Contact Phone', 'Contact Email']);
@@ -57,10 +58,10 @@ const HR10REFRESH = (() => {
       students.set(key, {row, active});
     });
     let grades = null, gradesError = '';
-    try { grades = HR10GRADEIMPORT.sourceFrom(upstream); }
+    try { grades = GRADES_IMPORT.sourceFrom(upstream); }
     catch (e) { gradesError = e.message; }
     let star = null, starError = '';
-    try { star = HR10STARIMPORT.sourceFrom(upstream, ss.getSpreadsheetTimeZone()); }
+    try { star = STAR_IMPORT.sourceFrom(upstream, ss.getSpreadsheetTimeZone()); }
     catch (e) { starError = e.message; }
     return {u, p, students, book: upstream, grades, gradesError, star, starError};
   }
@@ -218,16 +219,10 @@ const HR10REFRESH = (() => {
     const rows = master.sheet.getRange(2, 1, master.lastRow - 1, master.headers.length).getValues();
     const formulas = master.sheet.getRange(2, 1, master.lastRow - 1, master.headers.length).getFormulas();
     const fields = [];
-    const mirrors = ['SCC', 'ECC', 'STAR'].map(name => {
-      const t = table(ss.getSheetByName(name), ['Student Number']);
-      const byId = new Map(t.rows.map((row, i) => [id(row[t.columns.get('Student Number')]), i]));
-      const formulas = t.rows.length ? t.sheet.getRange(2, 1, t.rows.length, t.width).getFormulas() : [];
-      return {name, ...t, byId, formulas};
-    });
     MAP.forEach(([src, dest]) => {
       if (!data.u.columns.has(src)) report.issues.push('Upstream is missing ' + src + '; ' + dest + ' retained.');
     });
-    const gradeLayout = HR10GRADEIMPORT.findSlots(master.headers, 0);
+    const gradeLayout = GRADES_IMPORT.findSlots(master.headers, 0);
     if (data.gradesError) report.issues.push('Course grades not refreshed: ' + data.gradesError);
     else if (!gradeLayout) report.issues.push('Master has no course columns (e.g. MTH and MTH%); course grades not copied to Master.');
     if (data.starError) report.issues.push('STAR Import not used; Upstream STAR columns only: ' + data.starError);
@@ -238,13 +233,6 @@ const HR10REFRESH = (() => {
       if (formulas[rowNumber - 2][c - 1]) throw new Error('Master has a formula in source field ' + header);
       const before = rows[rowNumber - 2][c - 1];
       if (same(before, value)) return;
-      // A pending edit in a mirror must be resolved before source refresh overwrites it.
-      mirrors.forEach(t => {
-        const r = t.byId.get(key), c = t.columns.get(header);
-        if (t.formulas[r][c] || !same(t.rows[r][c], before)) {
-          throw new Error(t.name + ' differs from Master for student ' + key + ', ' + header + '. Resolve/synchronize this field first.');
-        }
-      });
       fields.push({studentNumber: key, header, value});
       report.changes.push({studentNumber: key, field: header, before, after: value});
     }
@@ -273,7 +261,7 @@ const HR10REFRESH = (() => {
       for (const subject of ['Reading', 'Math']) {
         // BOY percentile: only the STAR export has it. Filled once; never overwrites Master.
         const pctHeader = 'BOY ' + subject + ' Percentile';
-        const boy = HR10STARIMPORT.boy(data.star, key, subject);
+        const boy = STAR_IMPORT.boy(data.star, key, subject);
         if (boy && boy.percentile !== null && master.columns.has(pctHeader)) {
           const before = rows[r - 2][master.columns.get(pctHeader) - 1];
           if (blank(before)) add(key, r, pctHeader, boy.percentile);
@@ -282,7 +270,7 @@ const HR10REFRESH = (() => {
         }
         // Latest date/score: newest test from STAR Import or Upstream (STAR Import wins a tie).
         const candidates = [];
-        const latest = HR10STARIMPORT.latest(data.star, key, subject);
+        const latest = STAR_IMPORT.latest(data.star, key, subject);
         if (latest) candidates.push({date: date(latest.ymd, key + ' STAR Import ' + subject + ' date'), score: latest.score});
         const prefix = 'STAR_2TO12_' + subject.toUpperCase();
         const dh = prefix + '_DATE', sh = prefix + '_UNIFIED_SCORE';
@@ -310,7 +298,7 @@ const HR10REFRESH = (() => {
         add(key, r, targetDate, pick.date); add(key, r, targetScore, pick.score);
       }
       // Course names and Canvas percentages; students without CourseGrades rows keep theirs.
-      const gradeFields = data.grades && HR10GRADEIMPORT.masterFields(gradeLayout, data.grades.byId.get(key));
+      const gradeFields = data.grades && GRADES_IMPORT.masterFields(gradeLayout, data.grades.byId.get(key));
       if (gradeFields) gradeFields.forEach(f => add(key, r, f.header, f.value));
     }
     data.students.forEach((v, key) => { if (v.active && !master.rows.has(key)) report.sourceOnly.push(key); });
@@ -318,15 +306,15 @@ const HR10REFRESH = (() => {
     return {fields, relatedWrites, report};
   }
   function display(report, title) {
-    const esc = v => HR10CFG.escapeHtml(v instanceof Date ? Utilities.formatDate(v, book().getSpreadsheetTimeZone(), 'yyyy-MM-dd') : v);
+    const esc = v => CONFIG.escapeHtml(v instanceof Date ? Utilities.formatDate(v, book().getSpreadsheetTimeZone(), 'yyyy-MM-dd') : v);
     let html = '<div style="font:14px Arial">';
     const a = report.newStudents;
     if (a) {
       const listOf = xs => esc(xs.join('; ') || 'None');
       html += '<h3>New students</h3><p>' + (a.error ? '<b>Not added:</b> ' + esc(a.error) :
-        (report.preview ? 'Would be added to Master, SCC, ECC and STAR: ' + listOf(a.wouldAdd) : 'Added to Master, SCC, ECC and STAR: ' + listOf(a.added))) +
+        (report.preview ? 'Would be added to Master: ' + listOf(a.wouldAdd) : 'Added to Master: ' + listOf(a.added))) +
         (a.skipped.length ? '<br>Not added because they are on the Removed Students tab: ' + listOf(a.skipped) +
-          ' (use show10AddStudents from the Apps Script editor to add one back).' : '') + '</p>';
+          ' (use showAddStudentsDialog from the Apps Script editor to add one back).' : '') + '</p>';
       if (report.preview && a.wouldAdd.length) html += '<p><small>Preview: their other fields, contacts and grades are filled when you run the refresh.</small></p>';
     }
     html += '<p>' + report.changes.length + ' Master field changes; ' + report.contacts.length + ' changed/added contact rows.</p>';
@@ -351,7 +339,7 @@ const HR10REFRESH = (() => {
       html += '<h3>On Master, not in Upstream yet</h3><p>Still on Class Roster or starting later, so they are kept and not offered for removal: ' +
         esc(report.notYet.map(s => s.key + ' ' + s.name + (s.start ? ' (starts ' + s.start + ')' : '')).join('; ')) + '</p>';
     }
-    html += HR10REMOVE.section(report.missingDetails || []);
+    html += REMOVE_STUDENTS.section(report.missingDetails || []);
     html += '<h3>Missing information and review notes</h3><ul>' + report.issues.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>';
     SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(950).setHeight(650), title);
   }
@@ -359,14 +347,14 @@ const HR10REFRESH = (() => {
     const ss = book();
     let report, data, newStudents;
     // Step 1: add new students (own lock; the Master refresh below takes it next).
-    try { newStudents = HR10ADD.addAll(ss, preview); }
+    try { newStudents = ADD_STUDENTS.addAll(ss, preview); }
     catch (e) {
       newStudents = {added: [], wouldAdd: [], skipped: [], notes: [], classRosterIds: new Set(), error: e.message};
-      if (!preview) HR10CFG.log('ERROR', 'AddStudents', '', e.message, HR10CFG.errorDetails(e));
+      if (!preview) CONFIG.log('ERROR', 'AddStudents', '', e.message, CONFIG.errorDetails(e));
     }
     try {
       data = source(ss);
-      update10RosterFields(master => {
+      saveToMaster(master => {
         const result = build(ss, master, data);
         report = result.report;
         result.relatedWrites.push({sheet: 'Info', row: 3, column: 8,
@@ -374,28 +362,28 @@ const HR10REFRESH = (() => {
         return {fields: result.fields, relatedWrites: result.relatedWrites, dryRun: preview, bulk: true};
       });
     } catch (e) {
-      if (!preview) HR10CFG.log('ERROR', 'RefreshStudentData', '', e.message, HR10CFG.errorDetails(e));
+      if (!preview) CONFIG.log('ERROR', 'RefreshStudentData', '', e.message, CONFIG.errorDetails(e));
       throw e;
     }
     report.preview = preview;
     report.newStudents = newStudents;
     newStudents.notes.forEach(x => report.issues.push('New students: ' + x));
-    if (!preview) HR10CFG.log('SUCCESS', 'RefreshStudentData', '',
+    if (!preview) CONFIG.log('SUCCESS', 'RefreshStudentData', '',
       report.changes.length + ' Master fields; ' + report.contacts.length + ' contact rows refreshed.', '');
     try {
       if (!data.grades) throw new Error('see the Course grades note above');
-      report.grades = HR10GRADEIMPORT.run(ss, data.grades, preview);
+      report.grades = GRADES_IMPORT.run(ss, data.grades, preview);
       report.grades.issues.forEach(x => report.issues.push('Grades: ' + x));
-      if (!preview) HR10CFG.log('SUCCESS', 'GradesImport', '', report.grades.changes.length + ' Grades cells changed.', '');
+      if (!preview) CONFIG.log('SUCCESS', 'GradesImport', '', report.grades.changes.length + ' Grades cells changed.', '');
     } catch (e) {
       report.issues.push('Grades import stopped' + (preview ? '' : '; check the Grades tab') + ': ' + e.message);
-      if (!preview) HR10CFG.log('ERROR', 'GradesImport', '', e.message, HR10CFG.errorDetails(e));
+      if (!preview) CONFIG.log('ERROR', 'GradesImport', '', e.message, CONFIG.errorDetails(e));
     }
-    if (!preview && typeof HR10DUECOLORS !== 'undefined') {
-      try { HR10DUECOLORS.apply(true); }
+    if (!preview && typeof CALL_DUE_COLORS !== 'undefined') {
+      try { CALL_DUE_COLORS.apply(true); }
       catch (e) { report.issues.push('Call Due colors not reapplied: ' + e.message); }
     }
-    try { report.missingDetails = HR10REMOVE.details(ss, report.missing, data.book); }
+    try { report.missingDetails = REMOVE_STUDENTS.details(ss, report.missing, data.book); }
     catch (e) { report.issues.push('AddDrop details unavailable: ' + e.message); report.missingDetails = []; }
     // Not in Upstream yet (still on Class Roster, or a future start): keep, no Remove checkbox.
     const today = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd');
@@ -409,6 +397,5 @@ const HR10REFRESH = (() => {
   }
   return Object.freeze({run});
 })();
-function preview10StudentRefresh() { return HR10REFRESH.run(true); }
-function refreshStudentData() { return HR10REFRESH.run(false); }
-function refreshStudentDataAndCounselors() { return refreshStudentData(); }
+function previewStudentRefresh() { return STUDENT_REFRESH.run(true); }
+function refreshStudentData() { return STUDENT_REFRESH.run(false); }

@@ -1,14 +1,14 @@
-/** Save/Archive Call into all four rosters using the single shared save helper.
- * Version 1.2: Call cells are found through named ranges, so inserting rows or
- * columns on Call moves them automatically. Run setup10CallNamedRanges once
- * (install10RosterTools does it for you); it names the current cells only if a
- * name is missing and never moves an existing name.
+/** Save the Call form to Master, v2.0 for 12RosterORN. Requires Config.gs, MasterSave.gs.
+ * v2.0: Master only. On a roster, select the cell on Master.
+ * Call cells are found through named ranges, so inserting rows or columns on
+ * Call moves them automatically. Run setupCallNamedRanges once (installRosterTools
+ * does it for you); it names the current cells only if a name is missing and
+ * never moves an existing name.
  * CallStatus holds both validation messages and normal contact text.
- * Confirmation occurs outside the document lock; the confirmed note and form
- * are rechecked inside the lock before writing. Requires RosterSync 1.1.
+ * Confirmation happens outside the document lock; the confirmed note and form
+ * are rechecked inside the lock before writing.
  */
-const HR10CALL = (() => {
-  const TABS = ['Master', 'SCC', 'ECC', 'STAR'];
+const CALL_FORM = (() => {
   // Named range -> address used only when setup creates a missing name.
   const NAMES = {
     studentNumber: ['CallStudentNumber', 'O2'], student: ['CallStudent', 'C2'],
@@ -23,17 +23,13 @@ const HR10CALL = (() => {
   const SEP = '\n\n-- Additional LG call --\n';
   const SUCCESS_FIELDS = ['SCC Notes', 'SCC To Do', 'SCC Completion'];
   const FAIL_FIELDS = ATTEMPTS.concat('SCC Completion');
-  const trim = v => HR10CFG.text(v);
-  const header = v => HR10CFG.normalize(v);
-  function workbook() {
-    const ss = HR10CFG.workbook();
-    if (typeof update10RosterFields !== 'function') throw new Error('Install RosterSync 1.3 first.');
-    return ss;
-  }
+  const trim = v => CONFIG.text(v);
+  const header = v => CONFIG.normalize(v);
+  function workbook() { return CONFIG.workbook(); }
   function named(ss, key) {
     const name = NAMES[key][0], range = ss.getRangeByName(name);
     if (!range || range.getSheet().getName() !== 'Call') {
-      throw new Error('Named range ' + name + ' is missing or not on Call. Run setup10CallNamedRanges once.');
+      throw new Error('Named range ' + name + ' is missing or not on Call. Run setupCallNamedRanges once.');
     }
     return range;
   }
@@ -44,7 +40,7 @@ const HR10CALL = (() => {
   }
   /** Creates only missing names, at the layout the scripts were written for. */
   function setupNames() {
-    const ss = HR10CFG.workbook(), call = sheet(ss, 'Call'), created = [];
+    const ss = CONFIG.workbook(), call = sheet(ss, 'Call'), created = [];
     const missing = name => { const r = ss.getRangeByName(name); return !r || r.getSheet().getName() !== 'Call'; };
     Object.keys(NAMES).forEach(key => {
       const [name, address] = NAMES[key];
@@ -105,31 +101,18 @@ const HR10CALL = (() => {
     if (!note || /ERROR:/.test(note + '\n' + toDo)) throw new Error('Enter a valid contact note on Call.');
     return {studentNumber, note, toDo, successful: yes, workflow: yes ? 'SCC Success' : 'SCC Attempt'};
   }
-  function read(master, studentNumber, field) {
-    const row = master.rows.get(studentNumber), col = master.columns.get(field);
-    if (!row || !col) throw new Error('Master is missing the student or field: ' + field);
-    const cell = master.sheet.getRange(row,col);
-    if (cell.getFormulas()[0][0]) throw new Error('Use a value in the editable field: ' + field);
-    return cell.getValues()[0][0];
-  }
-  // Read related editable fields on every copy before planning a save. This
-  // catches a pending edit rather than overwriting it with an older Master value.
-  function consistent(ss, master, studentNumber, fields) {
-    const central = Object.fromEntries(fields.map(f => [f, read(master,studentNumber,f)]));
-    for (const tab of TABS.slice(1)) {
-      const local = sheet(ss,tab), headers = HR10CFG.headerColumns(local).headers;
-      const idCol = headers.indexOf('Student Number') + 1;
-      const ids = local.getRange(2,idCol,local.getLastRow()-1,1).getValues();
-      const row = ids.findIndex(r => trim(r[0]) === studentNumber) + 2;
-      if (row < 2) throw new Error('Student is missing on ' + tab);
-      const range = local.getRange(row,1,1,headers.length), values = range.getValues()[0], formulas = range.getFormulas()[0];
-      for (const field of fields) {
-        const i = headers.indexOf(field), v = values[i], c = central[field];
-        const same = v instanceof Date && c instanceof Date ? v.getTime() === c.getTime() : v === c;
-        if (i < 0 || formulas[i] || !same) throw new Error(tab + ' does not yet match Master for ' + field + '. Wait for sync and try again.');
-      }
-    }
-    return central;
+  /** The student's current Master values for these fields (one read of the row). */
+  function masterValues(master, studentNumber, fields) {
+    const row = master.rows.get(studentNumber);
+    if (!row) throw new Error('Student ' + studentNumber + ' is not on Master.');
+    const range = master.sheet.getRange(row, 1, 1, master.headers.length);
+    const values = range.getValues()[0], formulas = range.getFormulas()[0];
+    return Object.fromEntries(fields.map(field => {
+      const column = master.columns.get(field);
+      if (!column) throw new Error('Master is missing the field: ' + field);
+      if (formulas[column - 1]) throw new Error('Use a value in the editable field: ' + field);
+      return [field, values[column - 1]];
+    }));
   }
   function overflowEntries(value) { return trim(value) ? String(value).split(SEP).map(trim) : []; }
   function attemptPlan(values, note) {
@@ -144,11 +127,11 @@ const HR10CALL = (() => {
     return {number: 6, header: ATTEMPTS[5], value: prior ? prior + SEP + note : note, duplicate: false};
   }
   function log(level, action, studentNumber, message, details) {
-    HR10CFG.log(level,action,studentNumber,message,details);
+    CONFIG.log(level,action,studentNumber,message,details);
   }
   function report(ss, action, studentNumber, error, prefix) {
     const message = (prefix || '') + (error.message || String(error));
-    log('ERROR',action,studentNumber,message,HR10CFG.errorDetails(error));
+    log('ERROR',action,studentNumber,message,CONFIG.errorDetails(error));
     ss.toast(message,action + ' needs attention',12);
     throw error;
   }
@@ -158,8 +141,8 @@ const HR10CALL = (() => {
       entry = callData(ss);
       let before;
       // Snapshot under the shared lock, then release it before opening any alert.
-      update10RosterFields(master => {
-        before = consistent(ss,master,entry.studentNumber,entry.successful ? SUCCESS_FIELDS : FAIL_FIELDS);
+      saveToMaster(master => {
+        before = masterValues(master,entry.studentNumber,entry.successful ? SUCCESS_FIELDS : FAIL_FIELDS);
         return [];
       });
       const existing = trim(before['SCC Notes']);
@@ -174,10 +157,10 @@ const HR10CALL = (() => {
           return {saved:false,cancelled:true};
         }
       }
-      update10RosterFields(master => {
+      saveToMaster(master => {
         const current = callData(ss);
         if (JSON.stringify(current) !== JSON.stringify(entry)) throw new Error('Call changed while this action was running. Review it and save again.');
-        const values = consistent(ss,master,entry.studentNumber,entry.successful ? SUCCESS_FIELDS : FAIL_FIELDS);
+        const values = masterValues(master,entry.studentNumber,entry.successful ? SUCCESS_FIELDS : FAIL_FIELDS);
         if (entry.successful) {
           // Recheck all reviewed fields; UI alerts suspend execution and release locks.
           if (SUCCESS_FIELDS.some(f => values[f] !== before[f])) throw new Error('The saved SCC changed while you were reviewing it. Review the new note and save again.');
@@ -197,9 +180,9 @@ const HR10CALL = (() => {
         }
         return changes;
       });
-      log('INFO','SCC Archive',entry.studentNumber,result.duplicate ? 'Entry already saved; no duplicate added.' : 'Entry saved to all four rosters.',entry.workflow);
+      log('INFO','SCC Archive',entry.studentNumber,result.duplicate ? 'Entry already saved; no duplicate added.' : 'Entry saved to Master.',entry.workflow);
       ss.toast(result.duplicate ? 'This SCC entry was already saved.' :
-        'SCC ' + (entry.successful ? 'saved and marked Completed' : 'attempt ' + (result.attemptNumber===6 ? '6+' : result.attemptNumber) + ' saved') + ' on all four rosters.','SCC Saved',7);
+        'SCC ' + (entry.successful ? 'saved and marked Completed' : 'attempt ' + (result.attemptNumber===6 ? '6+' : result.attemptNumber) + ' saved') + ' on Master.','SCC Saved',7);
       return result;
     } catch(error) { return report(ss,'SCC Archive',entry && entry.studentNumber,error); }
   }
@@ -208,24 +191,24 @@ const HR10CALL = (() => {
     if (!active) throw new Error('Select a student first.');
     if (active.getSheet().getParent().getId() !== ss.getId()) throw new Error('Wrong workbook selection.');
     if (active.getSheet().getName() === 'Call') return {call:callData(ss)};
-    if (!TABS.includes(active.getSheet().getName()) || active.getNumRows()!==1 || active.getNumColumns()!==1 || active.getRow()<=1) {
-      throw new Error('On a roster, select one SCC Notes or Attempt LG call cell for a student.');
+    if (active.getSheet().getName()!==CONFIG.MASTER || active.getNumRows()!==1 || active.getNumColumns()!==1 || active.getRow()<=1) {
+      throw new Error('On Master, select one SCC Notes or Attempt LG call cell for a student.');
     }
-    const local = active.getSheet(), headers = HR10CFG.headerColumns(local).headers;
+    const local = active.getSheet(), headers = CONFIG.headerColumns(local).headers;
     const selectedHeader = headers[active.getColumn()-1];
     if (selectedHeader !== 'SCC Notes' && !ATTEMPTS.includes(selectedHeader)) throw new Error('Select SCC Notes or an Attempt LG call cell.');
-    return {studentNumber:HR10CFG.studentOnRow(local, active.getRow()), selectedHeader};
+    return {studentNumber:CONFIG.studentOnRow(local, active.getRow()), selectedHeader};
   }
   function prepareLog(ss) {
     const selection = selected(ss); let result;
-    update10RosterFields(master => {
+    saveToMaster(master => {
       if (selection.call) {
         const entry = callData(ss);
         if (JSON.stringify(entry)!==JSON.stringify(selection.call)) throw new Error('Call changed. Review it and try again.');
-        const values = consistent(ss,master,entry.studentNumber,entry.successful ? SUCCESS_FIELDS : FAIL_FIELDS);
+        const values = masterValues(master,entry.studentNumber,entry.successful ? SUCCESS_FIELDS : FAIL_FIELDS);
         result = {studentNumber:entry.studentNumber,note:entry.note,workflow:entry.workflow,attemptNumber:entry.successful ? null : attemptPlan(values,entry.note).number};
       } else {
-        const values = consistent(ss,master,selection.studentNumber,[selection.selectedHeader]);
+        const values = masterValues(master,selection.studentNumber,[selection.selectedHeader]);
         let note = trim(values[selection.selectedHeader]);
         if (!note) throw new Error(selection.selectedHeader + ' is blank for this student.');
         if (selection.selectedHeader === ATTEMPTS[5]) {
@@ -242,12 +225,12 @@ const HR10CALL = (() => {
   }
   function send(result) {
     const ss = workbook();
-    if (typeof HR10ECCPS === 'undefined') throw new Error('Add EccPowerSchool.gs before using PowerSchool handoffs.');
-    const settings = HR10ECCPS.settings(ss,result.workflow);
+    if (typeof POWERSCHOOL === 'undefined') throw new Error('Add EccPowerSchool.gs before using PowerSchool handoffs.');
+    const settings = POWERSCHOOL.settings(ss,result.workflow);
     const date = result.note.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/);
     // Blank date preserves the original handoff contract: review/set it manually.
     // Opening Log Text goes to PowerSchool only; the roster note is unchanged.
-    return HR10ECCPS.handoff('scc',{studentNumber:result.studentNumber,note:HR10ECCPS.withOpening(settings,result.note),
+    return POWERSCHOOL.handoff('scc',{studentNumber:result.studentNumber,note:POWERSCHOOL.withOpening(settings,result.note),
       outcome:result.workflow,attemptNumber:result.attemptNumber,date:date ? date[1] : ''},settings);
   }
   function logOnly() {
@@ -268,22 +251,22 @@ const HR10CALL = (() => {
       const active = SpreadsheetApp.getActiveRange();
       if (!active || active.getSheet().getParent().getId()!==ss.getId()) throw new Error('Select a student first.');
       if (active.getSheet().getName()==='Call') studentNumber=key(named(ss,'studentNumber').getValue());
-      else if (TABS.includes(active.getSheet().getName()) && active.getNumRows()===1 && active.getRow()>1) {
-        studentNumber=HR10CFG.studentOnRow(active.getSheet(), active.getRow());
+      else if (active.getSheet().getName()===CONFIG.MASTER && active.getNumRows()===1 && active.getRow()>1) {
+        studentNumber=CONFIG.studentOnRow(active.getSheet(), active.getRow());
       } else if (active.getNumRows()===1 && active.getNumColumns()===1) studentNumber=key(active.getValue());
-      else throw new Error('Select one student row on a roster, or one cell containing a Student Number.');
-      update10RosterFields(master => {
+      else throw new Error('Select one student row on Master, or one cell containing a Student Number.');
+      saveToMaster(master => {
         if (!master.rows.has(studentNumber)) throw new Error('This Student Number is not in Master.');
         return [];
       });
-      if (typeof HR10ECCPS==='undefined') throw new Error('Add EccPowerSchool.gs first.');
-      return HR10ECCPS.handoff('demographics',{studentNumber});
+      if (typeof POWERSCHOOL==='undefined') throw new Error('Add EccPowerSchool.gs first.');
+      return POWERSCHOOL.handoff('demographics',{studentNumber});
     } catch(error) { return report(ss,'Demographics Handoff',studentNumber,error); }
   }
   function reset() {
     const ss=workbook();
     const targets=ss.getNamedRanges().filter(n=>n.getName().startsWith(RESET_PREFIX)).map(n=>n.getRange());
-    if (!targets.length) throw new Error('No '+RESET_PREFIX+' named ranges found. Run setup10CallNamedRanges once.');
+    if (!targets.length) throw new Error('No '+RESET_PREFIX+' named ranges found. Run setupCallNamedRanges once.');
     // Check everything first so a moved name can never erase part of the form's formulas.
     targets.forEach(range=>{
       if (range.getSheet().getName()!=='Call') throw new Error('A '+RESET_PREFIX+' named range is not on Call: '+range.getA1Notation());
@@ -301,11 +284,8 @@ const HR10CALL = (() => {
   }
   return Object.freeze({workbook,save,logOnly,saveAndLog,demographics,reset,validate,setupNames});
 })();
-function saveSccToRoster() { return HR10CALL.save(); }
-function archiveCurrentSCCNote() { return saveSccToRoster(); }
-function logSccInPowerSchool() { return HR10CALL.logOnly(); }
-// Preserve the original button's log-only behavior.
-function saveSccAndOpenPowerSchool() { return logSccInPowerSchool(); }
-function archiveSccAndOpenPowerSchool() { return HR10CALL.saveAndLog(); }
-function resetCallEntry() { return HR10CALL.reset(); }
-function setup10CallNamedRanges() { return HR10CALL.setupNames(); }
+function saveCallToMaster() { return CALL_FORM.save(); }
+function saveCallAndOpenPowerSchool() { return CALL_FORM.saveAndLog(); }
+function logSccInPowerSchool() { return CALL_FORM.logOnly(); }
+function resetCallForm() { return CALL_FORM.reset(); }
+function setupCallNamedRanges() { return CALL_FORM.setupNames(); }

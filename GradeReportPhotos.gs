@@ -3,8 +3,10 @@
  * Reads private Drive blobs; embeds over-grid images anchored in the chosen
  * weekly column. No public URLs or sharing changes are needed.
  */
-const HR10GRADES = (() => {
+const GRADE_PHOTOS = (() => {
   const FIELDS = ['Preferred Name', 'Student Number', 'LAST NAME', 'FIRST NAME', 'GRADE', 'START DATE'];
+  // Saved in the sheet and document properties; keep these exact strings so
+  // photos and settings from earlier imports are still recognised.
   const PREFIX = 'HR10 grade photo|';
   const MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif'];
   const MAX_BYTES = 2 * 1024 * 1024;
@@ -26,7 +28,7 @@ const HR10GRADES = (() => {
   // Exact token sets allow first/last-name order changes and multipart names.
   // Preferred and legal names are separate aliases; no fuzzy name matching.
   function nameKey(value) {
-    return HR10CFG.text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    return CONFIG.text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).sort().join(' ');
   }
   function photoName(filename) {
@@ -35,14 +37,14 @@ const HR10GRADES = (() => {
     return nameKey(filename.replace(/\.[^.]+$/, ''));
   }
   function columnNumber(letter) {
-    const value = HR10CFG.text(letter).toUpperCase();
+    const value = CONFIG.text(letter).toUpperCase();
     if (!/^[A-Z]{1,3}$/.test(value)) throw new Error('Enter a column letter, for example Z.');
     const column = [...value].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
     if (column < 7 || column > 18278) throw new Error('Choose a weekly photo column after A:F.');
     return column;
   }
   function folderId(value) {
-    const input = HR10CFG.text(value);
+    const input = CONFIG.text(value);
     const match = input.match(/^https:\/\/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([\w-]+)(?:[/?#].*)?$/);
     if (match) return match[1];
     if (/^[\w-]{10,}$/.test(input)) return input;
@@ -51,12 +53,12 @@ const HR10GRADES = (() => {
   function records(values, label) {
     const seen = new Set();
     return values.map((row, i) => {
-      if (row.every(HR10CFG.blank)) return null;
-      const id = HR10CFG.studentId(row[1]);
+      if (row.every(CONFIG.blank)) return null;
+      const id = CONFIG.studentId(row[1]);
       if (!id) throw new Error(label + ' row ' + (i + 2) + ' has no Student Number.');
       if (seen.has(id)) throw new Error(label + ': duplicate Student Number ' + id + '.');
       seen.add(id);
-      return {id, row: i + 2, values: row, name: HR10CFG.text(row[0]) || row[3] + ' ' + row[2]};
+      return {id, row: i + 2, values: row, name: CONFIG.text(row[0]) || row[3] + ' ' + row[2]};
     }).filter(Boolean);
   }
   function matchFiles(students, master, files) {
@@ -94,17 +96,17 @@ const HR10GRADES = (() => {
   function readPlan(ss, options) {
     const sheet = ss.getSheetByName('Grades');
     if (!sheet) throw new Error('Grades tab is missing.');
-    const headers = sheet.getRange(1, 1, 1, 6).getDisplayValues()[0].map(HR10CFG.normalize);
+    const headers = sheet.getRange(1, 1, 1, 6).getDisplayValues()[0].map(CONFIG.normalize);
     if (FIELDS.some((h, i) => headers[i] !== h)) throw new Error('Grades A:F headers must be: ' + FIELDS.join(', ') + '.');
     if (options.column > sheet.getMaxColumns()) throw new Error('Add the destination column to Grades first.');
     const header = sheet.getRange(1, options.column).getDisplayValue();
-    if (!HR10CFG.text(header)) throw new Error('Label the weekly destination column before importing.');
-    const source = HR10CFG.table(ss.getSheetByName('Master'), FIELDS);
+    if (!CONFIG.text(header)) throw new Error('Label the weekly destination column before importing.');
+    const source = CONFIG.table(ss.getSheetByName('Master'), FIELDS);
     const master = records(source.rows.map(row => FIELDS.map(h => row[source.columns.get(h)])), 'Master');
     const height = sheet.getLastRow();
     const data = height > 1 ? sheet.getRange(2, 1, height - 1, sheet.getLastColumn()).getValues() : [];
     const formulas = height > 1 ? sheet.getRange(2, 1, height - 1, sheet.getLastColumn()).getFormulas() : [];
-    const seed = !data.some(row => row.some(v => !HR10CFG.blank(v))) && !formulas.some(row => row.some(Boolean));
+    const seed = !data.some(row => row.some(v => !CONFIG.blank(v))) && !formulas.some(row => row.some(Boolean));
     if (seed && sheet.getImages().length) throw new Error('Grades has images but no student rows. Restore the student rows first.');
     const students = seed ? master.map((s, i) => ({...s, row: i + 2})) : records(data.map(row => row.slice(0, 6)), 'Grades');
     if (!students.length) throw new Error('No students found to import.');
@@ -154,7 +156,7 @@ const HR10GRADES = (() => {
     if (plan.seed) {
       if (plan.students.length + 1 > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), plan.students.length + 1 - sheet.getMaxRows());
       const range = sheet.getRange(2, 1, plan.students.length, 6);
-      range.setValues(HR10CFG.prepareValues(range, plan.students.map(s => s.values)));
+      range.setValues(CONFIG.prepareValues(range, plan.students.map(s => s.values)));
     }
     sheet.setColumnWidth(options.column, WIDTH);
     plan.matches.forEach(({student, file, blob, thumbnail}) => {
@@ -216,7 +218,7 @@ const HR10GRADES = (() => {
       }
       function savePhoto(payload) {
         return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve)
-          .withFailureHandler(reject).save10ResizedGradePhoto(payload));
+          .withFailureHandler(reject).saveResizedGradePhoto(payload));
       }
       async function resizePhotos() {
         let imported = 0, failed = 0;
@@ -249,8 +251,8 @@ const HR10GRADES = (() => {
       </script>`;
   }
   function saveResized(payload) {
-    const ss = HR10CFG.workbook();
-    return HR10CFG.withLock(() => {
+    const ss = CONFIG.workbook();
+    return CONFIG.withLock(() => {
       const properties = PropertiesService.getDocumentProperties();
       const job = JSON.parse(properties.getProperty(RESIZE_JOB) || 'null');
       if (!job || !payload || payload.jobId !== job.id || Date.now() > job.expires) throw new Error('Resize session expired. Run the import again.');
@@ -263,7 +265,7 @@ const HR10GRADES = (() => {
       const sheet = ss.getSheetByName('Grades');
       if (!sheet || sheet.getRange(1, job.column).getDisplayValue() !== job.header) throw new Error('The destination header changed. Run the import again.');
       const rows = sheet.getRange(2, 2, Math.max(1, sheet.getLastRow() - 1), 1).getValues();
-      const matches = rows.map((r, i) => HR10CFG.studentId(r[0]) === entry.studentId ? i + 2 : 0).filter(Boolean);
+      const matches = rows.map((r, i) => CONFIG.studentId(r[0]) === entry.studentId ? i + 2 : 0).filter(Boolean);
       if (matches.length !== 1) throw new Error('Student row changed or is duplicated. Run the import again.');
       const file = DriveApp.getFileById(entry.fileId);
       if (file.getLastUpdated().getTime() !== entry.updated) throw new Error('The original photo changed. Run the import again.');
@@ -282,7 +284,7 @@ const HR10GRADES = (() => {
       job.files = job.files.filter(f => f !== entry);
       if (job.files.length) properties.setProperty(RESIZE_JOB, JSON.stringify(job)); else properties.deleteProperty(RESIZE_JOB);
       SpreadsheetApp.flush();
-      HR10CFG.log('SUCCESS', 'GradeReportPhotosResize', entry.studentId, 'Resized photo imported.', dimensions);
+      CONFIG.log('SUCCESS', 'GradeReportPhotosResize', entry.studentId, 'Resized photo imported.', dimensions);
       return dimensions;
     });
   }
@@ -297,14 +299,14 @@ const HR10GRADES = (() => {
     return {folder: folderId(folder.getResponseText() || saved), column: columnNumber(target.getResponseText() || 'Z')};
   }
   function show(plan, result, preview) {
-    const esc = HR10CFG.escapeHtml;
+    const esc = CONFIG.escapeHtml;
     const summary = preview ? plan.matches.length + ' matched photos; ' + (plan.seed ? plan.students.length + ' student rows will be copied from Master.' : 'existing student rows retained.') :
       result.inserted + ' photos imported; ' + result.unchanged + ' already present. ' + result.thumbnails.length + ' thumbnail previews. ' + result.pendingResize + ' awaiting automatic resizing.';
     const issues = preview ? plan.issues : result.issues;
     let html = '<div style="font:14px Arial"><p>' + esc(summary) + '</p><p>Destination: Grades column ' +
-      esc(HR10CFG.columnLetter(plan.options.column)) + ' (' + esc(plan.header) + ')</p><table border="1" cellpadding="5" style="border-collapse:collapse">' +
+      esc(CONFIG.columnLetter(plan.options.column)) + ' (' + esc(plan.header) + ')</p><table border="1" cellpadding="5" style="border-collapse:collapse">' +
       '<tr><th>Student</th><th>Cell</th><th>Original photo</th></tr>' + plan.matches.map(m => '<tr><td>' + esc(m.student.name) +
-        '</td><td>' + esc(HR10CFG.columnLetter(plan.options.column) + m.student.row) + '</td><td><a target="_blank" href="' +
+        '</td><td>' + esc(CONFIG.columnLetter(plan.options.column) + m.student.row) + '</td><td><a target="_blank" href="' +
         esc(m.file.driveFile.getUrl()) + '">Open report</a></td></tr>').join('') + '</table><p>Students without an imported photo: ' +
       esc((preview ? plan.missing.map(s => s.name) : result.missing).join(', ') || 'None') + '</p>' +
       (preview || !result.thumbnails.length ? '' : '<p>Thumbnail previews (use Open report for full-resolution text): ' +
@@ -313,15 +315,15 @@ const HR10GRADES = (() => {
     SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(850).setHeight(600), preview ? 'Grade photo preview — no changes' : 'Grade photos imported');
   }
   function run(preview) {
-    const ss = HR10CFG.workbook(), options = promptOptions(ss);
+    const ss = CONFIG.workbook(), options = promptOptions(ss);
     if (!options) return;
     let plan, result;
-    HR10CFG.withLock(() => {
+    CONFIG.withLock(() => {
       plan = readPlan(ss, options);
       if (!preview) {
         result = applyPlan(plan);
         PropertiesService.getDocumentProperties().setProperty('HR10_GRADE_PHOTO_FOLDER', options.folder);
-        HR10CFG.log(result.issues.length ? 'WARN' : 'SUCCESS', 'GradeReportPhotos', '',
+        CONFIG.log(result.issues.length ? 'WARN' : 'SUCCESS', 'GradeReportPhotos', '',
           result.inserted + ' imported; ' + result.unchanged + ' already present.', result);
       }
     });
@@ -331,6 +333,6 @@ const HR10GRADES = (() => {
   return Object.freeze({run, nameKey, photoName, columnNumber, folderId, records, matchFiles, applyPlan, pngDimensions, resizeHtml, saveResized});
 })();
 
-function preview10GradeReportPhotos() { return HR10GRADES.run(true); }
-function import10GradeReportPhotos() { return HR10GRADES.run(false); }
-function save10ResizedGradePhoto(payload) { return HR10GRADES.saveResized(payload); }
+function previewGradeReportPhotos() { return GRADE_PHOTOS.run(true); }
+function importGradeReportPhotos() { return GRADE_PHOTOS.run(false); }
+function saveResizedGradePhoto(payload) { return GRADE_PHOTOS.saveResized(payload); }

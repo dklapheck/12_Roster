@@ -5,7 +5,7 @@
  * the start of the PowerSchool note only; roster history never includes it.
  * PowerSchool cannot save line breaks, so every note sent there is put on one
  * line with " | " between lines. Roster fields keep their line breaks. */
-const HR10ECCPS = (() => {
+const POWERSCHOOL = (() => {
 // The settings table: the header row holding the single "Workflow" cell, the
 // unbroken run of headers on either side of it, and every row below it until
 // the Workflow column is blank.
@@ -13,12 +13,12 @@ function settingsTable_(sheet) {
   const values = sheet.getDataRange().getDisplayValues();
   const hits = [];
   values.forEach(function(row, r) {
-    row.forEach(function(value, c) { if (HR10CFG.normalize(value) === 'Workflow') hits.push([r, c]); });
+    row.forEach(function(value, c) { if (CONFIG.normalize(value) === 'Workflow') hits.push([r, c]); });
   });
   if (hits.length !== 1) {
     throw new Error('Info needs exactly one "Workflow" header for the PowerSchoolSettings table; found ' + hits.length + '.');
   }
-  const r0 = hits[0][0], headerRow = values[r0].map(function(value) { return HR10CFG.normalize(value); });
+  const r0 = hits[0][0], headerRow = values[r0].map(function(value) { return CONFIG.normalize(value); });
   let first = hits[0][1], last = hits[0][1];
   while (first > 0 && headerRow[first - 1]) first--;
   while (last + 1 < headerRow.length && headerRow[last + 1]) last++;
@@ -27,7 +27,7 @@ function settingsTable_(sheet) {
     if (headers.indexOf(header) !== i) throw new Error('PowerSchoolSettings has two "' + header + '" columns.');
   });
   const workflowColumn = headers.indexOf('Workflow'), rows = [];
-  for (let r = r0 + 1; r < values.length && HR10CFG.text(values[r][first + workflowColumn]); r++) {
+  for (let r = r0 + 1; r < values.length && CONFIG.text(values[r][first + workflowColumn]); r++) {
     rows.push(values[r].slice(first, last + 1));
   }
   return {headers: headers, rows: rows, workflowColumn: workflowColumn};
@@ -50,7 +50,7 @@ function readSettings(ss, workflow) {
 
   function valueFor_(header) {
     const index = headers.indexOf(header);
-    return index === -1 ? '' : HR10CFG.text(row[index]);
+    return index === -1 ? '' : CONFIG.text(row[index]);
   }
 
   const typeValue = valueFor_('Log Type value');
@@ -210,7 +210,7 @@ function showPowerSchoolHandoffDialog_(type, payload, title) {
   /** PowerSchool note: the workflow's Opening Log Text (if any), then the note. */
   function withOpening(settings, note) {
     const opening = settings && settings.openingText ? settings.openingText : '';
-    const body = HR10CFG.text(note);
+    const body = CONFIG.text(note);
     return opening && body ? opening + '\n' + body : opening || body;
   }
   /** One line for PowerSchool: lines joined with " | ", blank lines dropped. */
@@ -220,7 +220,7 @@ function showPowerSchoolHandoffDialog_(type, payload, title) {
       .filter(Boolean).join(' | ');
   }
   function handoff(type, payload, settings) {
-    HR10CFG.workbook();
+    CONFIG.workbook();
     const title = type === 'demographics' ? 'Open PowerSchool Demographics' :
       'Open PowerSchool ' + type.toUpperCase() + ' Log';
     const requestId = Utilities.getUuid();
@@ -229,12 +229,12 @@ function showPowerSchoolHandoffDialog_(type, payload, title) {
     if (settings) data.settings = settings;
     try {
       const url = showPowerSchoolHandoffDialog_(type, data, title);
-      HR10CFG.log('INFO', type.toUpperCase() + ' Handoff', data.studentNumber,
+      CONFIG.log('INFO', type.toUpperCase() + ' Handoff', data.studentNumber,
         'PowerSchool handoff dialog opened; submission is manual.', 'Request ID: ' + requestId);
       return url;
     } catch (error) {
-      HR10CFG.log('ERROR', type.toUpperCase() + ' Handoff', data.studentNumber,
-        'Could not open PowerSchool handoff.', HR10CFG.errorDetails(error));
+      CONFIG.log('ERROR', type.toUpperCase() + ' Handoff', data.studentNumber,
+        'Could not open PowerSchool handoff.', CONFIG.errorDetails(error));
       throw error;
     }
   }

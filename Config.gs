@@ -1,10 +1,12 @@
-/** Shared helpers for every 10RosterHR script (version 1.0).
- * Other files call HR10CFG only inside their functions, never while a file is
+/** Shared helpers for every 12RosterORN script (version 2.0).
+ * v2.0: Master is the only roster tab (SCC, ECC and STAR were removed).
+ * Other files call CONFIG only inside their functions, never while a file is
  * first loading, so the order of files in the Apps Script project does not matter.
  */
-const HR10CFG = (() => {
-  const ID = '1flssTRbZ74t1FFnoKlamhiSURcM-Byq5wraQHuI5TDw';
-  const ROSTER_TABS = Object.freeze(['Master', 'SCC', 'ECC', 'STAR']);
+const CONFIG = (() => {
+  const ID = '1q0y5VI2e1RYhiEriAu2msTGuOsyCwmun_qHmrjDUBJA';   // 12RosterORN
+  const WORKBOOK_NAME = '12RosterORN';
+  const MASTER = 'Master';
   const PLAIN_TEXT_FORMAT = '@';
   // Text that Sheets would turn into a formula, number, date, time, percent,
   // currency or TRUE/FALSE if written as-is. Examples: =x, +1, -- note, 3/4,
@@ -61,7 +63,7 @@ const HR10CFG = (() => {
 
   function workbook(ss) {
     ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-    if (!ss || ss.getId() !== ID) throw new Error('Run these tools only in 10RosterHR. No other file was changed.');
+    if (!ss || ss.getId() !== ID) throw new Error('Run these tools only in ' + WORKBOOK_NAME + '. No other file was changed.');
     return ss;
   }
 
@@ -113,7 +115,7 @@ const HR10CFG = (() => {
     return {sheet, headers: info.headers, columns, rows, width: info.width};
   }
 
-  /** Student Number from the selected row of a roster tab. */
+  /** Student Number from the selected row of Master. */
   function studentOnRow(sheet, row) {
     const key = studentId(sheet.getRange(row, findColumn(sheet, 'Student Number')).getValue());
     if (!key) throw new Error('The selected row has no valid Student Number.');
@@ -127,7 +129,7 @@ const HR10CFG = (() => {
     const url = text(info.getRange('H2').getValue());
     const match = url.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)(?:[/?#].*)?$/);
     if (!match) throw new Error('Put the imports workbook Google Sheets URL in Info!H2.');
-    if (match[1] === ID) throw new Error('Info!H2 must point to the separate imports workbook, not 10RosterHR.');
+    if (match[1] === ID) throw new Error('Info!H2 must point to the separate imports workbook, not ' + WORKBOOK_NAME + '.');
     try { return SpreadsheetApp.openById(match[1]); }
     catch (error) {
       throw new Error('Cannot read the imports workbook in Info!H2. Check the URL and this account\u2019s access. ' + error.message);
@@ -159,7 +161,7 @@ const HR10CFG = (() => {
     return String(value).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   }
 
-  return Object.freeze({ID, ROSTER_TABS, text, normalize, blank, same, studentId, literal, prepareValues,
+  return Object.freeze({ID, WORKBOOK_NAME, MASTER, text, normalize, blank, same, studentId, literal, prepareValues,
     columnLetter, workbook, withLock, headerColumns, findColumn, table, studentOnRow, sourceWorkbook, escapeHtml,
     log, errorDetails, timer});
 })();

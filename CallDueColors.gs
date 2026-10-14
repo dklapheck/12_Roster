@@ -1,8 +1,8 @@
-/** 10RosterHR Call Due colors v1.0 (replaces EccDateColors.gs; delete that file).
+/** 12RosterORN Call Due colors v2.0. Master only (the ECC tab was removed).
  * Requires Config.gs. Menu: Update > ECC Tools > Refresh Call Due colors.
  * Pull Data > Refresh students also reapplies these rules at the end of each run.
  *
- * Colors the ECC Date and Call Due cells on the ECC tab and Master by when the
+ * Colors the ECC Date and Call Due cells on Master by when the
  * student's next ECC is due:
  *   due date = ECC Date + 20 weekdays (WORKDAY), or Upstream's Call Due when
  *   there is no ECC Date yet. (ECC calls are due every 20 school days; weekdays
@@ -19,9 +19,9 @@
  * Re-running removes every rule this script (or the old EccDateColors script)
  * made, wherever it now sits, then adds a fresh set. Other rules are untouched.
  */
-const HR10DUECOLORS = (() => {
-  const TABS = ['ECC', 'Master'];
-  const MARK = 'N("HR10DUE")=0';   // always TRUE; identifies this script's rules
+const CALL_DUE_COLORS = (() => {
+  const TABS = ['Master'];   // a literal: CONFIG may not be loaded yet when this file loads
+  const MARK = 'N("HR10DUE")=0';   // always TRUE; identifies this script's rules (keep: existing rules use it)
   const WEEKDAYS = 20;
   const BANDS = [
     // [name, test on DUE, background, font]
@@ -57,12 +57,12 @@ const HR10DUECOLORS = (() => {
   }
 
   function applyTo(sheet) {
-    const cols = HR10CFG.headerColumns(sheet).columns;
+    const cols = CONFIG.headerColumns(sheet).columns;
     ['ECC Date', 'Call Due', 'Student Number'].forEach(h => {
       if (!cols.has(h)) throw new Error(sheet.getName() + ': missing header ' + h + '.');
     });
     const ecc = cols.get('ECC Date'), due = cols.get('Call Due');
-    const L = HR10CFG.columnLetter;
+    const L = CONFIG.columnLetter;
     const height = Math.max(sheet.getMaxRows() - 1, 1);
     const ranges = [sheet.getRange(2, ecc, height, 1), sheet.getRange(2, due, height, 1)];
     const all = sheet.getConditionalFormatRules();
@@ -79,19 +79,17 @@ const HR10DUECOLORS = (() => {
   }
 
   function apply(quiet) {
-    const ss = HR10CFG.workbook();
+    const ss = CONFIG.workbook();
     const results = TABS.map(name => {
       const sheet = ss.getSheetByName(name);
       if (!sheet) throw new Error(name + ' tab not found.');
       return applyTo(sheet);
     });
-    if (!quiet) ss.toast('Call Due colors applied to ' + TABS.join(' and ') + '.', 'ECC Tools', 5);
+    if (!quiet) ss.toast('Call Due colors applied to Master.', 'ECC Tools', 5);
     return results;
   }
 
   return Object.freeze({apply, formulas, ours, TABS});
 })();
 
-function applyCallDueColors() { return HR10DUECOLORS.apply(false); }
-/** Old menu name, kept so an existing button or menu still works. */
-function applyEccDateColors() { return applyCallDueColors(); }
+function applyCallDueColors() { return CALL_DUE_COLORS.apply(false); }

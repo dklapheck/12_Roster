@@ -13,22 +13,22 @@
  * Adding a new slot pair (e.g. SCI + SCI%) needs no code change. Columns that
  * are not slots (Week 6, photo columns) are never written.
  *
- * Master (and so SCC, ECC, STAR through the roster sync) gets the same slots
+ * Master gets the same slots
  * as part of the normal Master refresh. The Grades tab is written afterwards.
  * Each refresh rewrites every slot for students found in CourseGrades, so
  * dropped courses disappear. Students missing from CourseGrades keep their
  * previous grades. Master students missing from Grades are added at the bottom
  * of Grades; Grades A:F follows Master. Grades rows not in Master are kept.
  */
-const HR10GRADEIMPORT = (() => {
+const GRADES_IMPORT = (() => {
   const SOURCE_TAB = 'CourseGrades';
   // First non-blank wins. Unposted = the teacher's current gradebook score;
   // swap the order to prefer what students see (posted).
   const GRADE_HEADERS = ['CANVAS_UNPOSTED_COURSE_GRADE', 'CANVAS_POSTED_COURSE_GRADE'];
   const ID_FIELDS = ['Preferred Name', 'Student Number', 'LAST NAME', 'FIRST NAME', 'GRADE', 'START DATE'];
-  const text = v => HR10CFG.text(v);
-  const blank = v => HR10CFG.blank(v);
-  const same = (a, b) => HR10CFG.same(a, b);
+  const text = v => CONFIG.text(v);
+  const blank = v => CONFIG.blank(v);
+  const same = (a, b) => CONFIG.same(a, b);
 
   /** Course slots from normalized row-1 headers (0-based column indexes).
    * from: first column that may hold a slot. Returns null if there are none. */
@@ -88,14 +88,14 @@ const HR10GRADEIMPORT = (() => {
 
   /** CourseGrades rows grouped by Student Number. */
   function readSource(sheet) {
-    const t = HR10CFG.table(sheet, ['STUDENT_IDENTITY_ID', 'COURSE_NAME']);
+    const t = CONFIG.table(sheet, ['STUDENT_IDENTITY_ID', 'COURSE_NAME']);
     const gradeColumns = GRADE_HEADERS.filter(h => t.columns.has(h)).map(h => t.columns.get(h));
     if (!gradeColumns.length) throw new Error(SOURCE_TAB + ' has none of ' + GRADE_HEADERS.join(', ') + '.');
     const col = h => t.columns.get(h);
     const byId = new Map(), issues = [], seen = new Set();
     t.rows.forEach((row, i) => {
       if (row.every(blank)) return;
-      const id = HR10CFG.studentId(row[col('STUDENT_IDENTITY_ID')]);
+      const id = CONFIG.studentId(row[col('STUDENT_IDENTITY_ID')]);
       const name = text(row[col('COURSE_NAME')]);
       if (!id || !name) { issues.push(SOURCE_TAB + ' row ' + (i + 2) + ': no student or course name; skipped.'); return; }
       if (t.columns.has('CLASSROOM_ENROLLMENT_STATUS')) {
@@ -144,7 +144,7 @@ const HR10GRADEIMPORT = (() => {
     rows.forEach((row, i) => {
       if (row.every(blank) && !(formulas[i] || []).some(Boolean)) return;
       lastUsed = i + 1;
-      const id = HR10CFG.studentId(row[1]);
+      const id = CONFIG.studentId(row[1]);
       if (!id) throw new Error('Grades row ' + (i + 2) + ' has no Student Number.');
       if (byId.has(id)) throw new Error('Grades: duplicate Student Number ' + id + '.');
       byId.set(id, i);
@@ -165,7 +165,7 @@ const HR10GRADEIMPORT = (() => {
       const row = rows[i];
       student.values.forEach((v, c) => {
         // Keep the existing Student Number representation when it is the same ID.
-        if (c === 1 && HR10CFG.studentId(row[1]) === student.id) return;
+        if (c === 1 && CONFIG.studentId(row[1]) === student.id) return;
         row[c] = v;
       });
       const courses = source.byId.get(student.id);
@@ -184,8 +184,8 @@ const HR10GRADEIMPORT = (() => {
       row.forEach((v, c) => {
         if (same(before[i][c], v)) return;
         any = true;
-        if (c >= ID_FIELDS.length) changes.push({studentNumber: HR10CFG.studentId(row[1]), row: i + 2,
-          field: HR10CFG.columnLetter(c + 1) + ' ' + headers[c], before: before[i][c], after: v});
+        if (c >= ID_FIELDS.length) changes.push({studentNumber: CONFIG.studentId(row[1]), row: i + 2,
+          field: CONFIG.columnLetter(c + 1) + ' ' + headers[c], before: before[i][c], after: v});
       });
       if (any) changed.push(i);
     });
@@ -209,19 +209,19 @@ const HR10GRADEIMPORT = (() => {
 
   /** Reads Master + Grades, writes Grades unless preview. source: from sourceFrom. */
   function run(ss, source, preview) {
-    return HR10CFG.withLock(() => {
+    return CONFIG.withLock(() => {
       const sheet = ss.getSheetByName('Grades');
       if (!sheet) throw new Error('Grades tab is missing.');
       const lastColumn = sheet.getLastColumn();
-      const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(HR10CFG.normalize);
+      const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(CONFIG.normalize);
       const width = slots(headers).last + 1;
       const height = Math.max(sheet.getLastRow() - 1, 0);
       const values = height ? sheet.getRange(2, 1, height, width).getValues() : [];
       const formulas = height ? sheet.getRange(2, 1, height, width).getFormulas() : [];
-      const m = HR10CFG.table(ss.getSheetByName('Master'), ID_FIELDS);
+      const m = CONFIG.table(ss.getSheetByName('Master'), ID_FIELDS);
       const master = m.rows.filter(r => !blank(r[m.columns.get('Student Number')])).map(r => {
         const vals = ID_FIELDS.map(h => r[m.columns.get(h)]);
-        return {id: HR10CFG.studentId(vals[1]), values: vals};
+        return {id: CONFIG.studentId(vals[1]), values: vals};
       });
       const result = plan(headers, values, formulas, master, source);
       if (preview || !result.writes.length) return result;
@@ -229,7 +229,7 @@ const HR10GRADEIMPORT = (() => {
       if (needed > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), needed - sheet.getMaxRows());
       result.writes.forEach(w => {
         const range = sheet.getRange(w.row, 1, w.values.length, width);
-        range.setValues(HR10CFG.prepareValues(range, w.values));
+        range.setValues(CONFIG.prepareValues(range, w.values));
       });
       SpreadsheetApp.flush();
       return result;

@@ -1,4 +1,4 @@
-/** 10RosterHR WIG snapshots v1.9. Replace the old WigSnapshots Script file.
+/** 12RosterORN WIG snapshots v1.9.
  * v1.6: Failing Math / English / CTE come from CourseGrades, one row per course.
  * Credit-recovery courses (HS_COURSE_OFFERINGS_IS_CR_COURSE = Yes) are not counted.
  * Each failing line ends with the grade: "J Garcia, 11304174 — 37%"; CTE lines name
@@ -26,12 +26,12 @@
  * Master defines roster membership/names. Info!H2 points to the imports workbook.
  * Reads Upstream and CourseGrades directly. No Dash, StudentData, Config or Helpers.
  * Saves available metrics and lists missing students/data in column L.
- * Installation does not enable the optional Tuesday schedule.
+ * Snapshots are taken only from the WIG Tools menu (the automatic Tuesday
+ * schedule was removed).
  */
-const HR10WIG = (() => {
+const WIG_SNAPSHOTS = (() => {
   const METRICS = ['HR Students', 'Chronically Absent', 'List of Students Chronically Absent',
     'Failing Math', 'Failing English', 'Failing CTE Courses'];
-  const SCHEDULE = 'scheduledWigSnapshot';
   const MISSING_COLUMN = 12, MISSING_HEADER = 'Missing Students / Data';
   // The four student-list cells compared for repeats, found by header.
   const LIST_HEADERS = ['List of Students Chronically Absent', 'Failing Math', 'Failing English', 'Failing CTE Courses'];
@@ -48,7 +48,7 @@ const HR10WIG = (() => {
     [/\bInformation\b/g, 'Info'], [/\band\b/g, '&']];
   /** "CAR015A Arts, AV, Comm, Principles" -> "Arts AV Comm"; "CS CAR019A PBL Healthcare Expl CA" -> "PBL Healthcare". */
   function shortCourse(title) {
-    const full = HR10CFG.normalize(title);
+    const full = CONFIG.normalize(title);
     if (COURSE_SHORT[full]) return COURSE_SHORT[full];
     let s = full.replace(/^CS\s+/i, '')                       // district prefix
       .replace(/^[A-Z]{2,4}\d{2,4}[A-Z]{0,3}\d?\s+/, '')       // course code (CAR015A, SCI330A)
@@ -64,9 +64,9 @@ const HR10WIG = (() => {
   // Failing cells only: count line size, student line size.
   const SIZED_HEADERS = ['Failing Math', 'Failing English', 'Failing CTE Courses'];
   const COUNT_FONT_SIZE = 10, NAME_FONT_SIZE = 7;
-  const text = v => HR10CFG.normalize(v);
-  const blank = v => HR10CFG.blank(v);
-  const id = v => HR10CFG.studentId(v);
+  const text = v => CONFIG.normalize(v);
+  const blank = v => CONFIG.blank(v);
+  const id = v => CONFIG.studentId(v);
   function bool(v) {
     const s = text(v).toUpperCase();
     if (['Y', 'YES', 'TRUE', '1'].includes(s)) return true;
@@ -122,10 +122,10 @@ const HR10WIG = (() => {
     return '';
   }
   function workbook() {
-    return HR10CFG.workbook(SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(HR10CFG.ID));
+    return CONFIG.workbook(SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(CONFIG.ID));
   }
-  const lock = action => HR10CFG.withLock(action, 'Roster/WIG is busy. Retry the snapshot.');
-  const table = (sheet, required) => HR10CFG.table(sheet, required);
+  const lock = action => CONFIG.withLock(action, 'Roster/WIG is busy. Retry the snapshot.');
+  const table = (sheet, required) => CONFIG.table(sheet, required);
   function roster(ss) {
     const t = table(ss.getSheetByName('Master'), ['Student Number', 'FIRST NAME', 'LAST NAME']);
     const students = new Map();
@@ -180,7 +180,7 @@ const HR10WIG = (() => {
     return {...t, row, occupied};
   }
   function source(ss) {
-    const ssSource = HR10CFG.sourceWorkbook(ss);
+    const ssSource = CONFIG.sourceWorkbook(ss);
     const u = table(ssSource.getSheetByName('Upstream'), ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT',
       'PAR_CHRONICALLY_ABSENT', 'MATH_GRADE', 'MATH_PASSING_FLAG', 'ELA_GRADE', 'ELA_PASSING_FLAG']);
     const c = table(ssSource.getSheetByName('CourseGrades'), ['STUDENT_IDENTITY_ID', 'CANVAS_PASSING_FLAG',
@@ -342,7 +342,7 @@ const HR10WIG = (() => {
       const range = wig.sheet.getRange(wig.row, first.column, 1, values.length);
       const before = range.getValues(), notes = range.getNotes();
       if (range.getFormulas()[0].some(Boolean) || before[0].some(v => !blank(v))) throw new Error('WIG snapshot cells changed during calculation; existing values were preserved.');
-      ops.push({range, before, notes, values: HR10CFG.prepareValues(range, [values]),
+      ops.push({range, before, notes, values: CONFIG.prepareValues(range, [values]),
         wrap: values.some(v => typeof v === 'string' && v.includes('\n'))});
     }
     const missingRange = wig.sheet.getRange(wig.row, MISSING_COLUMN);
@@ -351,7 +351,7 @@ const HR10WIG = (() => {
     const existing = blank(before[0][0]) ? '' : String(before[0][0]);
     const missingValue = existing + (existing && report.missingText ? '\n\n' : '') + report.missingText;
     if (missingValue.length > 45000) throw new Error('WIG column L text is too long; snapshot was not changed.');
-    ops.push({range: missingRange, before, notes, values: HR10CFG.prepareValues(missingRange, [[missingValue]]), wrap: false});
+    ops.push({range: missingRange, before, notes, values: CONFIG.prepareValues(missingRange, [[missingValue]]), wrap: false});
     const noteRange = wig.sheet.getRange(wig.row, wig.columns.get('List of Students Chronically Absent') + 1);
     if (report.chronicNote.length > 45000) throw new Error('The chronic-absence note is too long; snapshot was not changed.');
     ops.push({range: noteRange, noteOnly: true, notes: noteRange.getNotes(), afterNotes: [[report.chronicNote]]});
@@ -368,7 +368,7 @@ const HR10WIG = (() => {
       const errors = [];
       attempted.reverse().forEach(op => {
         if (op.noteOnly) { try { op.range.setNotes(op.notes); } catch (x) { errors.push(x.message); } return; }
-        try { op.range.setValues(HR10CFG.prepareValues(op.range, op.before)); } catch (x) { errors.push(x.message); }
+        try { op.range.setValues(CONFIG.prepareValues(op.range, op.before)); } catch (x) { errors.push(x.message); }
       });
       try { SpreadsheetApp.flush(); } catch (x) { errors.push(x.message); }
       throw new Error('WIG snapshot failed: ' + e.message + (errors.length ? '. Restoration failed; review WIG row ' + wig.row + '.' : '. Snapshot cells were restored.'));
@@ -378,10 +378,10 @@ const HR10WIG = (() => {
     catch (e) { console.error('WIG repeat colors could not be applied: ' + e.message); }
   }
   function log(level, message, detail) {
-    HR10CFG.log(level, 'WigSnapshot', '', message, detail || '');
+    CONFIG.log(level, 'WigSnapshot', '', message, detail || '');
   }
   function display(report, title) {
-    const esc = v => HR10CFG.escapeHtml(v);
+    const esc = v => CONFIG.escapeHtml(v);
     let html = '<div style="font:14px Arial"><p>Week ' + esc(report.week) + '; WIG row ' + report.row + '.</p>';
     if (report.skipped) html += '<p>' + esc(report.message) + '</p>';
     else {
@@ -440,26 +440,8 @@ const HR10WIG = (() => {
     }
     return report;
   }
-  function matching(handler, type) {
-    return ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === handler && t.getEventType() === type);
-  }
-  function enable() {
-    const ss = workbook(), tz = ss.getSpreadsheetTimeZone();
-    lock(() => {
-      const old = matching(SCHEDULE, ScriptApp.EventType.CLOCK);
-      // Create successfully before removing old triggers so failure keeps the prior schedule.
-      ScriptApp.newTrigger(SCHEDULE).timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.TUESDAY).atHour(16).inTimezone(tz).create();
-      old.forEach(t => ScriptApp.deleteTrigger(t));
-    });
-    ss.toast('Tuesday WIG snapshots enabled during the 4–5 PM hour (' + tz + ').', 'WIG', 8);
-  }
-  function disable() { workbook(); lock(() => matching(SCHEDULE, ScriptApp.EventType.CLOCK).forEach(t => ScriptApp.deleteTrigger(t))); }
-  return Object.freeze({run, enable, disable, recolor});
+  return Object.freeze({run, recolor});
 })();
-function previewWigSnapshot() { return HR10WIG.run(true, true); }
-function saveWigSnapshot() { return HR10WIG.run(false, true); }
-function scheduledWigSnapshot() { return HR10WIG.run(false, false); }
-function snapshotWig_() { return HR10WIG.run(false, false).row; }
-function enableTuesdayWigSnapshots() { return HR10WIG.enable(); }
-function disableTuesdayWigSnapshots() { return HR10WIG.disable(); }
-function recolorWigStudentRepeats() { return HR10WIG.recolor(); }
+function previewWigSnapshot() { return WIG_SNAPSHOTS.run(true, true); }
+function saveWigSnapshot() { return WIG_SNAPSHOTS.run(false, true); }
+function recolorWigStudentRepeats() { return WIG_SNAPSHOTS.recolor(); }

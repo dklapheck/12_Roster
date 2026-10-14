@@ -13,15 +13,15 @@
  * 5:29 PM Pacific on Aug 27 is dated Aug 27 (the export's UTC text says Aug 28).
  * Upstream's STAR_2TO12_* dates follow the same rule.
  */
-const HR10STARIMPORT = (() => {
+const STAR_IMPORT = (() => {
   const SOURCE_TAB = 'STAR Import';
   const H = {
     id: 'Student ID', app: 'Application Name', completed: 'Completed Date',
     score: 'Score', percentile: 'Percentile Rank', window: 'Season/Screening Window Name'
   };
   const REQUIRED = [H.id, H.app, H.completed, H.score];
-  const text = v => HR10CFG.text(v);
-  const blank = v => HR10CFG.blank(v);
+  const text = v => CONFIG.text(v);
+  const blank = v => CONFIG.blank(v);
 
   function subjectOf(app) {
     const a = text(app).toLowerCase();
@@ -49,7 +49,7 @@ const HR10STARIMPORT = (() => {
    * Throws only if the tab or a required header is missing. */
   function parse(sheet, tz) {
     if (!sheet) throw new Error('the imports workbook has no ' + SOURCE_TAB + ' tab');
-    const t = HR10CFG.table(sheet, REQUIRED);
+    const t = CONFIG.table(sheet, REQUIRED);
     const col = h => t.columns.get(h);
     const byId = new Map(), issues = [];
     t.rows.forEach((row, i) => {
@@ -57,7 +57,7 @@ const HR10STARIMPORT = (() => {
       const get = h => (col(h) === undefined ? '' : row[col(h)]);
       if (row.every(blank)) return;
       let key;
-      try { key = HR10CFG.studentId(get(H.id)); }
+      try { key = CONFIG.studentId(get(H.id)); }
       catch (e) { issues.push(SOURCE_TAB + ' row ' + n + ': ' + e.message + ' Row skipped.'); return; }
       if (!key) { issues.push(SOURCE_TAB + ' row ' + n + ' has no Student ID; skipped.'); return; }
       if (blank(get(H.app))) return; // listed but not tested yet
