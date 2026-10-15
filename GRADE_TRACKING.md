@@ -5,6 +5,8 @@
 - **Grade Changes** shows the last source comparison, previous and current course grades, change in percentage points, and student/course flags. Any student with a course drop greater than 10 points has all their course rows highlighted and is sorted first.
 - **Grade History** keeps full course snapshots, including source date/import timestamp, capture time, previous grade, delta, and status. Keep its headers and saved rows intact.
 
+On **Master**, both the course name and percentage are underlined when that course decreased by any amount in the latest comparison. The underline is based on student number and full course name, not on the column position. An identical-source retry preserves the latest comparison and its underlines. A later successful import replaces them with the courses that decreased in that comparison.
+
 85% to 75% is not flagged; 85% to 74.99% is flagged. This is an absolute percentage-point difference, not a relative percent decrease. Extra credit above 100 is supported. Blank grades, new courses and new terms do not count as drops. Courses are matched by student number, full course name and term, independently of visible course slots. All courses in the source for current Master students are tracked, including overflow courses without a visible Grades slot. A course-name change starts a new course comparison.
 
 ## Install

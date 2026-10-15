@@ -55,6 +55,15 @@ test('source snapshot includes courses beyond visible slots and excludes student
   assert.equal(T.sourceCourses([{id:'1',values:['Student']}],source).length,14);
   assert.throws(()=>T.sourceCourses([],source), /No roster/);
 });
+test('Master underline targets follow student and course identity, not slot position', () => {
+  const headers=['Preferred Name','Student Number','LAST NAME','FIRST NAME','GRADE','START DATE','MTH','MTH%','Course 1','Course 1%'];
+  const rows=[['Student',1,'','','','','Other',90,'Moved course',70]];
+  const history=[['','','','',1,'Student','Moved course','Fall',70,80,-10,'Decreased'],
+    ['','','','',1,'Student','Other','Fall',90,90,0,'Unchanged']];
+  const targets=T.underlineTargets(headers,rows,history);
+  assert.equal(targets.all.length,2);
+  assert.deepEqual(JSON.parse(JSON.stringify(targets.decreased)),[{id:'1',row:2,course:9,pct:10}]);
+});
 test('duplicate records are rejected before writes',()=>{
   assert.throws(()=>T.plan([],[c('1','A',80),c('1','A',70)],meta,'now','new'),/Duplicate/);
 });

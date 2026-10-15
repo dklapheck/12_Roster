@@ -89,6 +89,42 @@ const GRADE_TRACKING = (() => {
       r[2] || r[3]]).sort((a, b) => Number(b[0] === 'RED FLAG') - Number(a[0] === 'RED FLAG') ||
         String(a[1]).localeCompare(String(b[1])) || (numeric(a[6]) ? a[6] : 0) - (numeric(b[6]) ? b[6] : 0) || String(a[3]).localeCompare(String(b[3])));
   }
+  /** Master course/percentage cells to underline for the latest comparison.
+   * headers and values use zero-based arrays; returned rows/columns are 1-based. */
+  function underlineTargets(headers, values, rows) {
+    const layout = GRADES_IMPORT.findSlots(headers, 0);
+    if (!layout) return {all: [], decreased: []};
+    const idColumn = headers.indexOf('Student Number');
+    if (idColumn < 0) throw new Error('Master is missing Student Number.');
+    const down = new Set(rows.filter(r => ['Decreased', 'RED FLAG'].includes(r[11]))
+      .map(r => JSON.stringify([String(r[4]), CONFIG.text(r[6])])));
+    const all = [], decreased = [];
+    values.forEach((row, i) => {
+      const id = CONFIG.studentId(row[idColumn]);
+      if (!id) return;
+      layout.all.forEach(slot => {
+        const course = CONFIG.text(row[slot.course]);
+        const target = {id, row: i + 2, course: slot.course + 1, pct: slot.pct + 1};
+        all.push(target);
+        if (course && down.has(JSON.stringify([id, course]))) decreased.push(target);
+      });
+    });
+    return {all, decreased};
+  }
+  /** Underline means the course decreased in the latest saved comparison.
+   * Identical-source retries keep the comparison rows, so they keep the underline. */
+  function underlineMasterDeclines(ss, rows) {
+    const sheet = ss.getSheetByName('Master');
+    if (!sheet) throw new Error('Master tab is missing.');
+    const info = CONFIG.headerColumns(sheet), height = Math.max(sheet.getLastRow() - 1, 0);
+    if (!height) return {coursesUnderlined: 0, studentsUnderlined: 0};
+    const targets = underlineTargets(info.headers, sheet.getRange(2, 1, height, info.width).getValues(), rows);
+    const a1 = t => CONFIG.columnLetter(t.course) + t.row + ':' + CONFIG.columnLetter(t.pct) + t.row;
+    if (targets.all.length) sheet.getRangeList(targets.all.map(a1)).setFontLine('none');
+    if (targets.decreased.length) sheet.getRangeList(targets.decreased.map(a1)).setFontLine('underline');
+    return {coursesUnderlined: targets.decreased.length,
+      studentsUnderlined: new Set(targets.decreased.map(t => t.id)).size};
+  }
   function historyRows(ss) {
     const sheet = ss.getSheetByName(HISTORY);
     if (!sheet || !sheet.getLastRow()) return [];
@@ -172,7 +208,10 @@ const GRADE_TRACKING = (() => {
     const result = plan(history, courses, meta, captured, Utilities.getUuid());
     append(ss, result.append);
     const counts = render(ss, result.rows, history);
-    return Object.assign({unchanged: result.unchanged}, counts);
+    const underlined = underlineMasterDeclines(ss, result.rows);
+    SpreadsheetApp.flush();
+    return Object.assign({unchanged: result.unchanged}, counts, underlined);
   }
-  return Object.freeze({HEADERS, REPORT_HEADERS, grade, baseline, sourceCourses, plan, reportRows, seed, capture});
+  return Object.freeze({HEADERS, REPORT_HEADERS, grade, baseline, sourceCourses, plan, reportRows,
+    underlineTargets, underlineMasterDeclines, seed, capture});
 })();

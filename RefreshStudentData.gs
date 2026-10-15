@@ -329,6 +329,7 @@ const STUDENT_REFRESH = (() => {
     if (g) {
       if (g.tracking) html += '<h3>Grade changes</h3><p>' + esc(g.tracking.studentsFlagged) +
         ' students flagged; ' + esc(g.tracking.coursesFlagged) + ' courses dropped more than 10 percentage points. See Grade Changes.' +
+        ' ' + esc(g.tracking.coursesUnderlined) + ' decreased courses are underlined on Master.' +
         (g.tracking.unchanged ? ' Source unchanged; previous comparison retained.' : ' New snapshot saved in Grade History.') + '</p>';
       html += '<h3>Grades tab</h3><p>' + esc(g.studentsUpdated) + ' students with grade changes; ' + esc(g.added.length) +
         ' rows added' + (g.importDate ? '; CourseGrades import date ' + esc(g.importDate) : '') + '.</p>';
