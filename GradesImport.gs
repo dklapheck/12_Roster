@@ -109,11 +109,20 @@ const GRADES_IMPORT = (() => {
       for (const c of gradeColumns) { grade = number(row[c]); if (grade !== '') break; }
       const drop = t.columns.has('FLAG_FUTURE_COURSE_DROP') && ['1', 'TRUE', 'Y', 'YES'].includes(text(row[col('FLAG_FUTURE_COURSE_DROP')]).toUpperCase());
       if (!byId.has(id)) byId.set(id, []);
-      byId.get(id).push({name, grade, drop});
+      const period = ['TERM_NAME', 'TERM_START_DATE', 'TERM_END_DATE'].map(h => {
+        if (!t.columns.has(h)) return '';
+        const v = row[col(h)];
+        return v instanceof Date ? Utilities.formatDate(v, sheet.getParent().getSpreadsheetTimeZone(), 'yyyy-MM-dd') : text(v);
+      }).join('|');
+      byId.get(id).push({name, grade, drop, period});
     });
-    const dateColumn = t.columns.get('IMPORT_DATE');
-    const importDate = dateColumn === undefined ? '' : t.rows.map(r => r[dateColumn]).find(v => !blank(v)) || '';
-    return {byId, issues, importDate};
+    const stamp = h => {
+      const c = t.columns.get(h), v = c === undefined ? '' : t.rows.map(r => r[c]).find(v => !blank(v)) || '';
+      return v instanceof Date ? Utilities.formatDate(v, sheet.getParent().getSpreadsheetTimeZone(),
+        h === 'IMPORT_DATE' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss') : text(v);
+    };
+    const importDate = stamp('IMPORT_DATE'), importStamp = stamp('IMPORT_DATETIME');
+    return {byId, issues, importDate, importStamp};
   }
 
   /** Slot index -> value for one student's courses. */
@@ -224,17 +233,22 @@ const GRADES_IMPORT = (() => {
         return {id: CONFIG.studentId(vals[1]), values: vals};
       });
       const result = plan(headers, values, formulas, master, source);
-      if (preview || !result.writes.length) return result;
-      const needed = Math.max(...result.writes.map(w => w.row + w.values.length - 1));
+      if (preview) return result;
+      // History uses the same lock as Grades. Preserve the pre-import baseline first.
+      GRADE_TRACKING.seed(ss, headers, values, master, source);
+      const needed = Math.max(1, ...result.writes.map(w => w.row + w.values.length - 1));
       if (needed > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), needed - sheet.getMaxRows());
       result.writes.forEach(w => {
         const range = sheet.getRange(w.row, 1, w.values.length, width);
         range.setValues(CONFIG.prepareValues(range, w.values));
       });
       SpreadsheetApp.flush();
+      try { result.tracking = GRADE_TRACKING.capture(ss, master, source); }
+      catch (e) { result.issues.push('Grade tracking needs attention: ' + e.message); }
       return result;
     }, 'Roster tools are busy; Grades was not updated. Please retry.');
   }
 
   return Object.freeze({run, plan, slots, findSlots, masterFields, code, assign, readSource, sourceFrom});
 })();
+
