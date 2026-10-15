@@ -327,6 +327,9 @@ const STUDENT_REFRESH = (() => {
     html += '</table>';
     const g = report.grades;
     if (g) {
+      if (g.tracking) html += '<h3>Grade changes</h3><p>' + esc(g.tracking.studentsFlagged) +
+        ' students flagged; ' + esc(g.tracking.coursesFlagged) + ' courses dropped more than 10 percentage points. See Grade Changes.' +
+        (g.tracking.unchanged ? ' Source unchanged; previous comparison retained.' : ' New snapshot saved in Grade History.') + '</p>';
       html += '<h3>Grades tab</h3><p>' + esc(g.studentsUpdated) + ' students with grade changes; ' + esc(g.added.length) +
         ' rows added' + (g.importDate ? '; CourseGrades import date ' + esc(g.importDate) : '') + '.</p>';
       if (g.changes.length) {
@@ -399,3 +402,4 @@ const STUDENT_REFRESH = (() => {
 })();
 function previewStudentRefresh() { return STUDENT_REFRESH.run(true); }
 function refreshStudentData() { return STUDENT_REFRESH.run(false); }
+
