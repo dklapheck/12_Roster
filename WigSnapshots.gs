@@ -1,4 +1,4 @@
-/** 12RosterORN WIG snapshots v1.9.
+/** 12RosterORN WIG snapshots v2.0.
  * v1.6: Failing Math / English / CTE come from CourseGrades, one row per course.
  * Credit-recovery courses (HS_COURSE_OFFERINGS_IS_CR_COURSE = Yes) are not counted.
  * Each failing line ends with the grade: "J Garcia, 11304174 — 37%"; CTE lines name
@@ -13,6 +13,7 @@
  * v1.9: Failing Math / English use Upstream MATH_PASSING_FLAG / ELA_PASSING_FLAG
  * (0 = failing) and show MATH_GRADE / ELA_GRADE. Failing CTE still comes from
  * CourseGrades, skipping credit-recovery courses.
+ * v2.0: Failing CTE includes only 10th-grade students.
  * @NotOnlyCurrentDoc
  * Requires Config.gs. Menus are built by Menus.gs.
  * v1.2: Failing Math / English / CTE cells hold the count, then one student per
@@ -67,6 +68,7 @@ const WIG_SNAPSHOTS = (() => {
   const text = v => CONFIG.normalize(v);
   const blank = v => CONFIG.blank(v);
   const id = v => CONFIG.studentId(v);
+  const isTenthGrade = v => /^(?:grade\s*)?10(?:th)?(?:\s*grade)?$/i.test(text(v));
   function bool(v) {
     const s = text(v).toUpperCase();
     if (['Y', 'YES', 'TRUE', '1'].includes(s)) return true;
@@ -127,7 +129,7 @@ const WIG_SNAPSHOTS = (() => {
   const lock = action => CONFIG.withLock(action, 'Roster/WIG is busy. Retry the snapshot.');
   const table = (sheet, required) => CONFIG.table(sheet, required);
   function roster(ss) {
-    const t = table(ss.getSheetByName('Master'), ['Student Number', 'FIRST NAME', 'LAST NAME']);
+    const t = table(ss.getSheetByName('Master'), ['Student Number', 'FIRST NAME', 'LAST NAME', 'GRADE']);
     const students = new Map();
     t.rows.forEach((row, offset) => {
       const key = id(row[t.columns.get('Student Number')]);
@@ -141,7 +143,8 @@ const WIG_SNAPSHOTS = (() => {
       const name = (preferred || (first + ' ' + last).trim()) || key;
       // Failing lists use the Subject Line style: A Aguirre, 9487734
       const short = [first.charAt(0).toUpperCase(), last].filter(Boolean).join(' ');
-      students.set(key, {name, first, last, label: (short ? short + ', ' : '') + key});
+      students.set(key, {name, first, last, grade: text(row[t.columns.get('GRADE')]),
+        label: (short ? short + ', ' : '') + key});
     });
     if (!students.size) throw new Error('Master has no students.');
     return students;
@@ -234,6 +237,8 @@ const WIG_SNAPSHOTS = (() => {
           // A blank flag with zero classes means the student is not enrolled in that subject.
         }
       }
+      // The WIG's CTE measure applies only to 10th-grade students.
+      if (!isTenthGrade(student.grade)) continue;
       const rows = data.courses.get(key);
       if (!rows?.length) { issue(label, 'no CourseGrades rows; CTE cannot be verified'); continue; }
       const fails = {CTE: []}, unknown = new Set();
