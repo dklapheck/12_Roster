@@ -1,6 +1,9 @@
-/** 12RosterORN source refresh v1.8 (adds new students first).
+/** 12RosterORN source refresh v1.9 (adds new students first).
  * @NotOnlyCurrentDoc
- * Requires Config.gs, MasterSave.gs, RemoveStudents.gs, GradesImport.gs, StarImport.gs and AddStudents.gs.
+ * Requires Config.gs, MasterSave.gs, RemoveStudents.gs, GradesImport.gs, StarImport.gs, AddStudents.gs and OnboardingReview.gs.
+ * v1.9: existing Welcome Email / SCC Completion / ISMA changes from Class Roster
+ * are reviewed in bulk, never automatically overwritten. Missing source students
+ * are named even when AddDrop history cannot be read.
  * v1.8: Master only (SCC, ECC and STAR were removed).
  * v1.7: after a saved refresh, Call Due colors are reapplied (CallDueColors.gs).
  * v1.7: Upstream GE_NEXT_CALL_DUE fills Call Due (a blank source keeps the cell).
@@ -63,7 +66,8 @@ const STUDENT_REFRESH = (() => {
     let star = null, starError = '';
     try { star = STAR_IMPORT.sourceFrom(upstream, ss.getSpreadsheetTimeZone()); }
     catch (e) { starError = e.message; }
-    return {u, p, students, book: upstream, grades, gradesError, star, starError};
+    const onboarding = ONBOARDING_REVIEW.sourceFrom(upstream);
+    return {u, p, students, book: upstream, grades, gradesError, star, starError, onboarding};
   }
   function date(v, label) {
     if (v instanceof Date && !isNaN(v.getTime())) return new Date(v.getTime());
@@ -218,6 +222,8 @@ const STUDENT_REFRESH = (() => {
     const report = {changes: [], contacts: [], issues: [], sourceOnly: [], missing: [], inactive: []};
     const rows = master.sheet.getRange(2, 1, master.lastRow - 1, master.headers.length).getValues();
     const formulas = master.sheet.getRange(2, 1, master.lastRow - 1, master.headers.length).getFormulas();
+    report.onboarding = ONBOARDING_REVIEW.plan(master, rows, formulas, data.onboarding);
+    report.issues.push(...report.onboarding.issues);
     const fields = [];
     MAP.forEach(([src, dest]) => {
       if (!data.u.columns.has(src)) report.issues.push('Upstream is missing ' + src + '; ' + dest + ' retained.');
@@ -302,12 +308,30 @@ const STUDENT_REFRESH = (() => {
       if (gradeFields) gradeFields.forEach(f => add(key, r, f.header, f.value));
     }
     data.students.forEach((v, key) => { if (v.active && !master.rows.has(key)) report.sourceOnly.push(key); });
+    const label = key => ONBOARDING_REVIEW.studentLabel(master, rows, key, master.rows.get(key));
+    const contactIds = new Set();
+    data.p.rows.forEach(row => {
+      try { const key = id(row[data.p.columns.get('Student Number')]); if (key) contactIds.add(key); }
+      catch (e) { /* The contact planner reports invalid identifiers. */ }
+    });
+    report.missingSources = [
+      {source: 'Upstream', students: report.missing.map(label)},
+      ...(data.onboarding.available ? [{source: 'Class Roster', students: report.onboarding.missing}] : []),
+      {source: 'ProRoster', students: [...master.rows.keys()].filter(k => !contactIds.has(k)).map(label)},
+      ...(data.grades ? [{source: 'CourseGrades', students: [...master.rows.keys()].filter(k => !data.grades.byId.has(k)).map(label)}] : [])
+    ];
+    report.inactiveLabels = report.inactive.map(label);
     const relatedWrites = planContacts(ss, master.rows, data, report);
     return {fields, relatedWrites, report};
   }
   function display(report, title) {
     const esc = v => CONFIG.escapeHtml(v instanceof Date ? Utilities.formatDate(v, book().getSpreadsheetTimeZone(), 'yyyy-MM-dd') : v);
     let html = '<div style="font:14px Arial">';
+    html += '<h3>Missing students by source</h3><p>These notices do not remove students or clear their existing values. ' +
+      'A student can be missing from one export and present in another.</p><ul>' +
+      report.missingSources.map(s => '<li><b>' + esc(s.source) + ':</b> ' + esc(s.students.join('; ') || 'None') + '</li>').join('') +
+      '</ul><p><b>Inactive in Upstream (retained):</b> ' + esc(report.inactiveLabels.join('; ') || 'None') + '</p>';
+    html += ONBOARDING_REVIEW.section(report.onboarding, report.preview);
     const a = report.newStudents;
     if (a) {
       const listOf = xs => esc(xs.join('; ') || 'None');
@@ -388,12 +412,16 @@ const STUDENT_REFRESH = (() => {
       catch (e) { report.issues.push('Call Due colors not reapplied: ' + e.message); }
     }
     try { report.missingDetails = REMOVE_STUDENTS.details(ss, report.missing, data.book); }
-    catch (e) { report.issues.push('AddDrop details unavailable: ' + e.message); report.missingDetails = []; }
+    catch (e) { report.issues.push('Missing-student details unavailable: ' + e.message); report.missingDetails = []; }
     // Not in Upstream yet (still on Class Roster, or a future start): keep, no Remove checkbox.
     const today = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd');
     const waiting = s => newStudents.classRosterIds.has(s.key) || (/^\d{4}-\d{2}-\d{2}$/.test(s.start) && s.start > today);
     report.notYet = report.missingDetails.filter(waiting);
     report.missingDetails = report.missingDetails.filter(s => !waiting(s));
+    const missingCount = new Set(report.missingSources.flatMap(s => s.students)).size;
+    try { ss.toast(report.onboarding.changes.length + ' onboarding changes to review; ' + missingCount +
+      ' students missing from one or more exports. See the refresh report.', preview ? 'Refresh preview' : 'Refresh complete', 15); }
+    catch (e) { console.error('Refresh notification could not be displayed: ' + e.message); }
     console.log(JSON.stringify(report));
     try { display(report, preview ? 'Student refresh preview — no data saved' : 'Student refresh saved'); }
     catch (e) { console.error('Refresh report could not be displayed: ' + e.message); }

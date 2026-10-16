@@ -53,7 +53,9 @@ const REMOVE_STUDENTS = (() => {
     const m = CONFIG.table(ss.getSheetByName('Master'), ['Student Number']);
     const byId = new Map(m.rows.map(r => [id(r[m.columns.get('Student Number')]), r]));
     const get = (row, h) => !row || m.columns.get(h) === undefined ? '' : row[m.columns.get(h)];
-    const ad = addDrop(source, keys, ss);
+    let ad;
+    try { ad = addDrop(source, keys, ss); }
+    catch (e) { ad = {result: new Map(), note: 'AddDrop details unavailable: ' + e.message}; }
     return keys.map(key => {
       const row = byId.get(key);
       return {key, name: (text(get(row, 'FIRST NAME')) + ' ' + text(get(row, 'LAST NAME'))).trim(),
