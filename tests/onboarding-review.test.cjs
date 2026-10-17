@@ -155,12 +155,16 @@ test('missing-student details survive unreadable AddDrop history', () => {
 });
 
 for (const preview of [true, false]) {
-  test('full refresh ' + (preview ? 'preview' : 'save') + ' keeps onboarding proposals separate and names missing students', () => {
-    const f = fixture(['LC Email', 'Learning Coach']), packets = [], toasts = [];
+  for (const pct of [42.9, 0, 100, '', undefined]) {
+  test('full refresh ' + (preview ? 'preview' : 'save') + ' keeps onboarding separate and handles % Passing source ' + String(pct), () => {
+    const f = fixture(['% Passing', 'LC Email', 'Learning Coach']), packets = [], toasts = [];
+    f.cells[0][6] = 75;
     const tableSheet = (name, heads, rows) => ({getName: () => name, getLastColumn: () => heads.length,
       getLastRow: () => rows.length + 1, getRange: r => ({getValues: () => r === 1 ? [heads] : rows})});
-    f.sourceSheets.Upstream = tableSheet('Upstream', ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT', 'LC_COACH_NAME', 'EMAIL_LEARNING_COACH'],
-      [[1, 'Y', 'Example Coach', 'coach@example.com']]);
+    const upHeaders = ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT', 'LC_COACH_NAME', 'EMAIL_LEARNING_COACH'];
+    const upRow = [1, 'Y', 'Example Coach', 'coach@example.com'];
+    if (pct !== undefined) { upHeaders.push('PCT_CLASSES_PASSING'); upRow.push(pct); }
+    f.sourceSheets.Upstream = tableSheet('Upstream', upHeaders, [upRow]);
     f.sourceSheets.ProRoster = tableSheet('ProRoster', ['Student Number', 'Name', 'Gender', 'Phone', 'Contact Name', 'Contact Phone', 'Contact Email'], []);
     f.extraSheets.Contacts = tableSheet('Contacts', ['Student Number', 'Student Source Name', 'Gender', 'Student Phone',
       'Contact Name', 'Relationship', 'Source Phone', 'Source Email', 'Effective Phone', 'Effective Email', 'Learning Coach', 'Contact Key'], []);
@@ -177,10 +181,14 @@ for (const preview of [true, false]) {
     const result = vm.runInContext('STUDENT_REFRESH', f.ctx).run(preview);
     assert.equal(result.onboarding.changes.length, 3);
     assert.equal(packets.length, 1);
-    assert.deepEqual(plain(packets[0].fields), [
+    const expected = [
       {studentNumber: '1', header: 'Learning Coach', value: 'Example Coach'},
       {studentNumber: '1', header: 'LC Email', value: 'coach@example.com'}
-    ]);
+    ];
+    if (typeof pct === 'number') expected.push({studentNumber: '1', header: '% Passing', value: pct});
+    else assert.match(result.issues.join(' '), /PCT_CLASSES_PASSING/);
+    assert.deepEqual(plain(packets[0].fields), expected);
+    assert.equal(f.cells[0][6], 75); // Planner/preview never writes a field directly.
     assert.equal(packets[0].dryRun, preview);
     assert.equal(f.writes.length, 0);
     assert.equal(f.cache.size, preview ? 0 : 1);
@@ -192,12 +200,14 @@ for (const preview of [true, false]) {
     assert.match(f.dialogs[0], /2 — Test Two/);
     assert.equal(f.dialogs[0].includes('Accept all'), !preview);
   });
+  }
 }
 
-test('new students receive Learning Coach and LC Email from Upstream', () => {
-  const f = fixture(['LC Email', 'Learning Coach']);
-  const heads = ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT', 'STUDENT_FIRST_NAME', 'STUDENT_LAST_NAME', 'LC_COACH_NAME', 'EMAIL_LEARNING_COACH'];
-  const rows = [[3, 'Y', 'New', 'Student', 'Example Coach', 'coach@example.com']];
+for (const pct of [0, 42.9, 100]) {
+test('new students receive LC fields and % Passing ' + pct + ' from Upstream', () => {
+  const f = fixture(['LC Email', '% Passing', 'Learning Coach']);
+  const heads = ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT', 'STUDENT_FIRST_NAME', 'STUDENT_LAST_NAME', 'LC_COACH_NAME', 'EMAIL_LEARNING_COACH', 'PCT_CLASSES_PASSING'];
+  const rows = [[3, 'Y', 'New', 'Student', 'Example Coach', 'coach@example.com', pct]];
   f.sourceSheets.Upstream = {getName: () => 'Upstream', getLastColumn: () => heads.length,
     getLastRow: () => 2, getRange: r => ({getValues: () => r === 1 ? [heads] : rows})};
   load(f.ctx, 'AddStudents.gs');
@@ -206,5 +216,7 @@ test('new students receive Learning Coach and LC Email from Upstream', () => {
   assert.equal(result.list[0].key, '3');
   assert.equal(result.list[0].values['Learning Coach'], 'Example Coach');
   assert.equal(result.list[0].values['LC Email'], 'coach@example.com');
+  assert.equal(result.list[0].values['% Passing'], pct);
   assert.equal(f.writes.length, 0);
 });
+}
