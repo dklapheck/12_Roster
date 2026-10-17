@@ -1,5 +1,6 @@
-/** 12RosterORN: add new students to Master (v2.0). Requires Config.gs.
+/** 12RosterORN: add new students to Master (v2.1). Requires Config.gs.
  * @NotOnlyCurrentDoc
+ * v2.1: new students also receive Learning Coach and LC Email from Upstream.
  * v2.0: Master only (SCC, ECC and STAR were removed).
  * v1.1: runs as the first step of Pull Data > Refresh students (RefreshStudentData v1.7), which
  * adds every new student automatically. Students listed on the Removed Students
@@ -30,6 +31,7 @@ const ADD_STUDENTS = (() => {
   // Upstream header -> roster header. Same fields the refresh keeps current.
   const UPSTREAM = [['STUDENT_LAST_NAME', 'LAST NAME'], ['STUDENT_FIRST_NAME', 'FIRST NAME'], ['GRADE', 'GRADE'],
     ['ENROLL_DATE_PS', 'START DATE'], ['SCHOOL', 'SCHOOL'], ['EMAIL_O365', 'Student Email'], ['COUNSELOR', 'Counselor'],
+    ['LC_COACH_NAME', 'Learning Coach'], ['EMAIL_LEARNING_COACH', 'LC Email'],
     ['GE_NEXT_CALL_DUE', 'Call Due']];
   const text = v => CONFIG.text(v);
   const blank = v => CONFIG.blank(v);
