@@ -7,14 +7,16 @@ const load = (ctx, file) => vm.runInContext(fs.readFileSync(path.join(__dirname,
 const plain = x => JSON.parse(JSON.stringify(x));
 const headers = ['Student Number', 'FIRST NAME', 'LAST NAME', 'Welcome Email', 'SCC Completion', 'ISMA'];
 
-function fixture() {
+function fixture(extraMasterHeaders = []) {
+  const masterHeaders = headers.concat(extraMasterHeaders);
   const cells = [[1, 'Test', 'One', 'Sent', 'Attempt 1', 'Sent'], [2, 'Test', 'Two', '', 'Completed', 'Lead Approved']];
+  cells.forEach(row => row.push(...extraMasterHeaders.map(() => '')));
   const formulas = cells.map(r => r.map(() => ''));
   let sourceRows = [[2, 'Test', 'Two', '', 'Completed', 'Lead Approved'], [1, 'Test', 'One', 'Follow-up', 'Completed', '']];
   let sourceHeaders = headers.slice(), failWrite = false;
   const writes = [], cache = new Map(), logs = [], dialogs = [], extraSheets = {}, sourceSheets = {};
   const range = (r, c, height = 1, width = 1) => ({
-    getValues: () => r === 1 ? [headers.slice(c - 1, c - 1 + width)] :
+    getValues: () => r === 1 ? [masterHeaders.slice(c - 1, c - 1 + width)] :
       cells.slice(r - 2, r - 2 + height).map(row => row.slice(c - 1, c - 1 + width)),
     getValue: () => cells[r - 2][c - 1],
     getFormula: () => formulas[r - 2][c - 1],
@@ -26,7 +28,7 @@ function fixture() {
       values.forEach((row, ri) => row.forEach((v, ci) => { cells[r - 2 + ri][c - 1 + ci] = v; }));
     }
   });
-  const sheet = {getName: () => 'Master', getLastColumn: () => headers.length, getLastRow: () => cells.length + 1, getRange: range};
+  const sheet = {getName: () => 'Master', getLastColumn: () => masterHeaders.length, getLastRow: () => cells.length + 1, getRange: range};
   const sourceSheet = {getName: () => 'Class Roster', getLastColumn: () => sourceHeaders.length,
     getLastRow: () => sourceRows.length + 1, getRange: r => ({getValues: () => r === 1 ? [sourceHeaders] : sourceRows})};
   const sourceBook = {getSheetByName: name => name === 'Class Roster' ? sourceSheet : sourceSheets[name] || null};
@@ -154,10 +156,11 @@ test('missing-student details survive unreadable AddDrop history', () => {
 
 for (const preview of [true, false]) {
   test('full refresh ' + (preview ? 'preview' : 'save') + ' keeps onboarding proposals separate and names missing students', () => {
-    const f = fixture(), packets = [], toasts = [];
+    const f = fixture(['LC Email', 'Learning Coach']), packets = [], toasts = [];
     const tableSheet = (name, heads, rows) => ({getName: () => name, getLastColumn: () => heads.length,
       getLastRow: () => rows.length + 1, getRange: r => ({getValues: () => r === 1 ? [heads] : rows})});
-    f.sourceSheets.Upstream = tableSheet('Upstream', ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT'], [[1, 'Y']]);
+    f.sourceSheets.Upstream = tableSheet('Upstream', ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT', 'LC_COACH_NAME', 'EMAIL_LEARNING_COACH'],
+      [[1, 'Y', 'Example Coach', 'coach@example.com']]);
     f.sourceSheets.ProRoster = tableSheet('ProRoster', ['Student Number', 'Name', 'Gender', 'Phone', 'Contact Name', 'Contact Phone', 'Contact Email'], []);
     f.extraSheets.Contacts = tableSheet('Contacts', ['Student Number', 'Student Source Name', 'Gender', 'Student Phone',
       'Contact Name', 'Relationship', 'Source Phone', 'Source Email', 'Effective Phone', 'Effective Email', 'Learning Coach', 'Contact Key'], []);
@@ -174,7 +177,10 @@ for (const preview of [true, false]) {
     const result = vm.runInContext('STUDENT_REFRESH', f.ctx).run(preview);
     assert.equal(result.onboarding.changes.length, 3);
     assert.equal(packets.length, 1);
-    assert.equal(packets[0].fields.length, 0);
+    assert.deepEqual(plain(packets[0].fields), [
+      {studentNumber: '1', header: 'Learning Coach', value: 'Example Coach'},
+      {studentNumber: '1', header: 'LC Email', value: 'coach@example.com'}
+    ]);
     assert.equal(packets[0].dryRun, preview);
     assert.equal(f.writes.length, 0);
     assert.equal(f.cache.size, preview ? 0 : 1);
@@ -187,3 +193,18 @@ for (const preview of [true, false]) {
     assert.equal(f.dialogs[0].includes('Accept all'), !preview);
   });
 }
+
+test('new students receive Learning Coach and LC Email from Upstream', () => {
+  const f = fixture(['LC Email', 'Learning Coach']);
+  const heads = ['STUDENT_NUMBER', 'CURRENT_ACTIVE_STUDENT', 'STUDENT_FIRST_NAME', 'STUDENT_LAST_NAME', 'LC_COACH_NAME', 'EMAIL_LEARNING_COACH'];
+  const rows = [[3, 'Y', 'New', 'Student', 'Example Coach', 'coach@example.com']];
+  f.sourceSheets.Upstream = {getName: () => 'Upstream', getLastColumn: () => heads.length,
+    getLastRow: () => 2, getRange: r => ({getValues: () => r === 1 ? [heads] : rows})};
+  load(f.ctx, 'AddStudents.gs');
+  const result = vm.runInContext('ADD_STUDENTS', f.ctx).candidates(f.ss);
+  assert.equal(result.list.length, 1);
+  assert.equal(result.list[0].key, '3');
+  assert.equal(result.list[0].values['Learning Coach'], 'Example Coach');
+  assert.equal(result.list[0].values['LC Email'], 'coach@example.com');
+  assert.equal(f.writes.length, 0);
+});

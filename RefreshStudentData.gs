@@ -1,6 +1,8 @@
-/** 12RosterORN source refresh v1.9 (adds new students first).
+/** 12RosterORN source refresh v1.10 (adds new students first).
  * @NotOnlyCurrentDoc
  * Requires Config.gs, MasterSave.gs, RemoveStudents.gs, GradesImport.gs, StarImport.gs, AddStudents.gs and OnboardingReview.gs.
+ * v1.10: Upstream LC_COACH_NAME and EMAIL_LEARNING_COACH refresh Master's
+ * Learning Coach and LC Email by header name; blank source values retain local values.
  * v1.9: existing Welcome Email / SCC Completion / ISMA changes from Class Roster
  * are reviewed in bulk, never automatically overwritten. Missing source students
  * are named even when AddDrop history cannot be read.
@@ -29,6 +31,7 @@ const STUDENT_REFRESH = (() => {
     ['STUDENT_LAST_NAME', 'LAST NAME'], ['STUDENT_FIRST_NAME', 'FIRST NAME'],
     ['GRADE', 'GRADE'], ['ENROLL_DATE_PS', 'START DATE'], ['SCHOOL', 'SCHOOL'],
     ['SPED504PLAN', 'SPED'], ['EMAIL_O365', 'Student Email'],
+    ['LC_COACH_NAME', 'Learning Coach'], ['EMAIL_LEARNING_COACH', 'LC Email'],
     ['COUNSELOR', 'Counselor'], ['COUNSELOR_EMAIL', 'Counselor Email'],
     ['GE_NEXT_CALL_DUE', 'Call Due']
   ];
