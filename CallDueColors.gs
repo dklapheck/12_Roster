@@ -1,16 +1,16 @@
-/** 12RosterORN Call Due colors v2.1. Master only (the ECC tab was removed).
+/** 12RosterORN Call Due colors v3.0. Master only (the ECC tab was removed).
  * Requires Config.gs. Menu: Update > ECC Tools > Refresh Call Due colors.
  * Pull Data > Refresh students also reapplies these rules at the end of each run.
  *
- * Colors the ECC Date and Call Due cells on Master by when the
- * student's next ECC is due:
- *   due date = the later of ECC Date + 20 weekdays (WORKDAY) and Call Due.
- *   If only ECC Date is valid, use ECC Date + 20 weekdays; if only Call Due
- *   is valid, use Call Due. Invalid or missing dates do not enter the comparison.
- *   WORKDAY skips weekends, but no holiday or school-break calendar is supplied.
+ * Colors each date column on Master independently:
+ *   ECC Date: use 20 weekdays after that cell's date (WORKDAY).
+ *   Call Due: use that cell's date directly.
+ * One column's date never controls the other column's color. A missing or
+ * invalid date is maroon in that column only, when a Student Number is present.
+ * WORKDAY skips weekends, but no holiday or school-break calendar is supplied.
  *
- *   No ECC Date and no Call Due  -> maroon, white text
- *   Overdue (later deadline passed) -> red, white text
+ *   Missing/invalid date        -> maroon, white text
+ *   Overdue (deadline passed)   -> red, white text
  *   Due today or within 2 weekdays -> hot pink
  *   Due in 3-5 weekdays          -> orange
  *   Due in 6-10 weekdays         -> yellow
@@ -33,18 +33,18 @@ const CALL_DUE_COLORS = (() => {
     ['green', () => 'TRUE', '#93C47D', null]
   ];
 
-  /** Conditional-format formulas for one tab, relative to row 2. */
+  /** Independent rules for each column, relative to row 2. */
   function formulas(eccLetter, dueLetter, idLetter) {
-    const e = '$' + eccLetter + '2', c = '$' + dueLetter + '2', s = '$' + idLetter + '2';
-    const has = 'OR(ISNUMBER(' + e + '),ISNUMBER(' + c + '))';
-    const eccDue = 'WORKDAY(' + e + ',' + WEEKDAYS + ')';
-    // Compare both deadlines when present; otherwise use the one valid deadline.
-    // The final 0 keeps comparisons safe when neither date is valid; has excludes that row.
-    const due = 'IF(ISNUMBER(' + e + '),IF(ISNUMBER(' + c + '),MAX(' + eccDue + ',' + c + '),' +
-      eccDue + '),IF(ISNUMBER(' + c + '),' + c + ',0))';
-    const list = [{name: 'missing', formula: '=AND(' + MARK + ',' + s + '<>"",NOT(' + has + '))', background: '#7B1113', font: '#FFFFFF'}];
-    BANDS.forEach(([name, test, background, font]) => {
-      list.push({name, formula: '=AND(' + MARK + ',' + has + ',' + test(due) + ')', background, font});
+    const s = '$' + idLetter + '2', list = [];
+    [{column: eccLetter, weekdays: WEEKDAYS}, {column: dueLetter, weekdays: 0}].forEach(({column, weekdays}) => {
+      const date = '$' + column + '2', has = 'ISNUMBER(' + date + ')';
+      const deadline = weekdays ? 'WORKDAY(' + date + ',' + weekdays + ')' : date;
+      // Keep comparisons safe for invalid dates; has excludes them from the bands.
+      const due = 'IF(' + has + ',' + deadline + ',0)';
+      list.push({column, name: 'missing', formula: '=AND(' + MARK + ',' + s + '<>"",NOT(' + has + '))', background: '#7B1113', font: '#FFFFFF'});
+      BANDS.forEach(([name, test, background, font]) => {
+        list.push({column, name, formula: '=AND(' + MARK + ',' + has + ',' + test(due) + ')', background, font});
+      });
     });
     return list;
   }
@@ -69,12 +69,13 @@ const CALL_DUE_COLORS = (() => {
     const ecc = cols.get('ECC Date'), due = cols.get('Call Due');
     const L = CONFIG.columnLetter;
     const height = Math.max(sheet.getMaxRows() - 1, 1);
-    const ranges = [sheet.getRange(2, ecc, height, 1), sheet.getRange(2, due, height, 1)];
+    const ranges = new Map([[L(ecc), sheet.getRange(2, ecc, height, 1)],
+      [L(due), sheet.getRange(2, due, height, 1)]]);
     const all = sheet.getConditionalFormatRules();
     const kept = all.filter(r => !ours(r));
     const fresh = formulas(L(ecc), L(due), L(cols.get('Student Number'))).map(x => {
       const b = SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(x.formula)
-        .setBackground(x.background).setRanges(ranges);
+        .setBackground(x.background).setRanges([ranges.get(x.column)]);
       if (x.font) b.setFontColor(x.font);
       return b.build();
     });
