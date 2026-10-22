@@ -4,7 +4,7 @@ Previously, Class Roster populated **Welcome Email**, **SCC Completion** and
 **ISMA** only when a student was first added. Existing students' values were
 left alone without comparison. These fields now have a separate review step.
 
-1. Update the Class Roster export in the imports workbook identified by Info!H2.
+1. Update the Class Roster export in the imports workbook identified by Info!A2.
 2. Run **Update → Pull Data → Refresh students, contacts and grades**.
 3. Near the top of the refresh report, compare **Current Master** with
    **Imported Class Roster**. Use **Accept all**, **Reject all**, or select a

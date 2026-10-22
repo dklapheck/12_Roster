@@ -24,7 +24,7 @@
  * cell, so the student's line is colored instead of the cell background.)
  * v1.4: in Failing Math / English / CTE, the count is font size 10 and the
  * student lines are font size 7.
- * Master defines roster membership/names. Info!H2 points to the imports workbook.
+ * Master defines roster membership/names. Info!A2 points to the imports workbook.
  * Reads Upstream and CourseGrades directly. No Dash, StudentData, Config or Helpers.
  * Saves available metrics and lists missing students/data in column L.
  * Snapshots are taken only from the WIG Tools menu (the automatic Tuesday

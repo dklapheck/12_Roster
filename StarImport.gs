@@ -1,7 +1,7 @@
 /** STAR import v1.0 (STAR Import tab -> BOY percentiles and Latest STAR date/score).
  * Requires Config.gs. Called by RefreshStudentData.gs (Student refresh menu);
  * it has no menu of its own. Source: the STAR Import tab of the imports
- * workbook in Info!H2 (read only), pasted straight from the Renaissance export.
+ * workbook in Info!A2 (read only), pasted straight from the Renaissance export.
  *
  * Columns are found by header name, so the export's column order may change.
  * Used: Student ID, Application Name (Star Math / Star Reading), Completed Date

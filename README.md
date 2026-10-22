@@ -1,6 +1,23 @@
 # 12_Roster
 Automation. Don't have multiple tabs sync.
 
+## Setup instructions for a copied roster
+
+1. Open **Extensions → Apps Script → Config.gs**. Replace `const ID` with the
+   copied roster's spreadsheet ID: the text between `/d/` and `/edit` in its URL.
+2. Optional: change `const WORKBOOK_NAME = '12RosterORN';` to your roster's name.
+   This name appears in messages; the ID controls which spreadsheet the scripts use.
+3. Put the separate Student Data Imports workbook URL in **Info!A2**. Leave
+   **Info!A3** for the automatic refresh timestamp. **Info!C1:C5** holds these
+   setup instructions.
+4. Save the script, run `installRosterTools`, and authorize it if prompted.
+   Reload the spreadsheet, then use **Update → Pull Data → Preview source changes**
+   before refreshing.
+
+For an existing roster moved to this layout, sync the updated `Config.gs`,
+`RefreshStudentData.gs`, and `MasterSave.gs` together before running a preview or
+refresh. They read the imports URL from A2 and write the refresh timestamp to A3.
+
 The student refresh and new-student import populate Master's **Learning Coach**
 from Upstream's `LC_COACH_NAME` and **LC Email** from `EMAIL_LEARNING_COACH`.
 Fields are matched by header name, independent of column position. Existing

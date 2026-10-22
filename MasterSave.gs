@@ -16,7 +16,7 @@
  * The planner returns either
  *   [{studentNumber, header, value}, ...]
  * or {fields: [...], relatedWrites: [...], bulk: true, dryRun: true}
- *   relatedWrites: [{sheet: 'Contacts' (row 2+) or 'Info' (H3 only), row, column, values: [[...]]}]
+ *   relatedWrites: [{sheet: 'Contacts' (row 2+) or 'Info' (A3 only), row, column, values: [[...]]}]
  *   bulk: joins neighbouring rows into fewer writes (Pull Data).
  *   dryRun: plan only; nothing is written (Preview).
  * Return [] to read Master under the lock without saving anything.
@@ -128,8 +128,8 @@ const MASTER_SAVE = (() => {
           !Number.isInteger(item.row) || !Number.isInteger(item.column)) throw new Error('Invalid related write.');
       const height = values.length, width = values[0].length;
       if (!(item.sheet === 'Contacts' && item.row >= 2 && item.column >= 1 ||
-            item.sheet === 'Info' && item.row === 3 && item.column === 8 && height === 1 && width === 1)) {
-        throw new Error('Related writes are limited to Contacts data and Info!H3.');
+            item.sheet === 'Info' && item.row === 3 && item.column === 1 && height === 1 && width === 1)) {
+        throw new Error('Related writes are limited to Contacts data and Info!A3.');
       }
       if (item.row + height - 1 > sheet.getMaxRows() || item.column + width - 1 > sheet.getMaxColumns()) {
         throw new Error('Add enough empty rows/columns to ' + item.sheet + ' first.');
