@@ -1,7 +1,7 @@
 /** Grades import v1.1 (X / X% headers; also fills the matching Master columns).
  * Requires Config.gs. Called by RefreshStudentData.gs (Student refresh menu);
  * it has no menu of its own. Source: the CourseGrades tab of the imports
- * workbook in Info!H2 (read only).
+ * workbook in Info!A2 (read only).
  *
  * Course slots are found by header name, on the Grades tab and on Master:
  *   - a course code (2-4 capital letters, e.g. MTH, ENG, ORN, HST, ART) with a
@@ -251,4 +251,3 @@ const GRADES_IMPORT = (() => {
 
   return Object.freeze({run, plan, slots, findSlots, masterFields, code, assign, readSource, sourceFrom});
 })();
-

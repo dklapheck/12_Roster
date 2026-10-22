@@ -8,7 +8,7 @@
  * tab are never re-added automatically; the refresh report names them.
  * showAddStudentsDialog() still opens a pick-and-confirm dialog if you want it.
  *
- * Finds students who are in the imports workbook (Info!H2) but not on Master:
+ * Finds students who are in the imports workbook (Info!A2) but not on Master:
  *  - every row of the Class Roster tab, and
  *  - every active Upstream student (CURRENT_ACTIVE_STUDENT = Y).
  * A dialog lists them with a checkbox each; nothing changes until you confirm.

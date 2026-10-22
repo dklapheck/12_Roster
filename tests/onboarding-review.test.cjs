@@ -181,6 +181,7 @@ for (const preview of [true, false]) {
     const result = vm.runInContext('STUDENT_REFRESH', f.ctx).run(preview);
     assert.equal(result.onboarding.changes.length, 3);
     assert.equal(packets.length, 1);
+    assert.deepEqual(plain(packets[0].relatedWrites.filter(w => w.sheet === 'Info').map(w => [w.row, w.column])), [[3, 1]]);
     const expected = [
       {studentNumber: '1', header: 'Learning Coach', value: 'Example Coach'},
       {studentNumber: '1', header: 'LC Email', value: 'coach@example.com'}
@@ -220,3 +221,77 @@ test('new students receive LC fields and % Passing ' + pct + ' from Upstream', (
   assert.equal(f.writes.length, 0);
 });
 }
+
+test('imports URL is read from A2 even when H2 contains an old URL', () => {
+  const f = fixture(), reads = [];
+  const getSheet = f.ss.getSheetByName;
+  f.ss.getSheetByName = name => name === 'Info' ? {getRange: address => {
+    reads.push(address);
+    return {getValue: () => address === 'A2' ? 'https://docs.google.com/spreadsheets/d/imports/edit' :
+      'https://docs.google.com/spreadsheets/d/old-imports/edit'};
+  }} : getSheet(name);
+  f.ctx.SpreadsheetApp.openById = id => { assert.equal(id, 'imports'); return f.sourceBook; };
+  assert.equal(vm.runInContext('CONFIG', f.ctx).sourceWorkbook(f.ss), f.sourceBook);
+  assert.deepEqual(reads, ['A2']);
+});
+
+for (const [name, value, inaccessible, expected] of [
+  ['blank URL', '', false, /URL in Info!A2/],
+  ['invalid URL', 'not a URL', false, /URL in Info!A2/],
+  ['roster URL', 'https://docs.google.com/spreadsheets/d/1q0y5VI2e1RYhiEriAu2msTGuOsyCwmun_qHmrjDUBJA/edit', false, /Info!A2 must point to the separate imports/],
+  ['unreadable source', 'https://docs.google.com/spreadsheets/d/imports/edit', true, /Cannot read the imports workbook in Info!A2/]
+]) {
+  test(name + ' reports the new A2 location', () => {
+    const f = fixture(), getSheet = f.ss.getSheetByName;
+    f.ss.getSheetByName = name => name === 'Info' ? {getRange: () => ({getValue: () => value})} : getSheet(name);
+    if (inaccessible) f.ctx.SpreadsheetApp.openById = () => { throw Error('no access'); };
+    assert.throws(() => vm.runInContext('CONFIG', f.ctx).sourceWorkbook(f.ss), expected);
+    assert.equal(f.writes.length, 0);
+  });
+}
+
+function timestampFixture() {
+  const f = fixture(), grid = Array.from({length: 4}, () => Array(8).fill('')), infoWrites = [];
+  grid[1][0] = 'imports URL'; grid[2][0] = 'old timestamp'; grid[2][7] = 'unrelated H3';
+  const getSheet = f.ss.getSheetByName;
+  const info = {getMaxRows: () => 4, getMaxColumns: () => 8,
+    getRange: (r, c, height, width) => ({
+      getValues: () => grid.slice(r - 1, r - 1 + height).map(row => row.slice(c - 1, c - 1 + width)),
+      getFormulas: () => Array.from({length: height}, () => Array(width).fill('')),
+      getNumberFormats: () => Array.from({length: height}, () => Array(width).fill('@')),
+      setValues: values => {
+        infoWrites.push({r, c, values: plain(values)});
+        values.forEach((row, ri) => row.forEach((v, ci) => {grid[r - 1 + ri][c - 1 + ci] = v;}));
+      }
+    })};
+  f.ss.getSheetByName = name => name === 'Info' ? info : getSheet(name);
+  return {...f, grid, infoWrites, save: vm.runInContext('MASTER_SAVE', f.ctx).save};
+}
+
+test('timestamp saves to A3 while preserving the URL and former H3 cell', () => {
+  const f = timestampFixture();
+  const result = f.save(() => ({fields: [], relatedWrites: [{sheet: 'Info', row: 3, column: 1, values: [['new timestamp']]}]}));
+  assert.equal(result.relatedCells, 1);
+  assert.equal(f.grid[2][0], 'new timestamp');
+  assert.equal(f.grid[1][0], 'imports URL');
+  assert.equal(f.grid[2][7], 'unrelated H3');
+  assert.deepEqual(f.infoWrites.map(w => [w.r, w.c]), [[3, 1]]);
+});
+
+for (const [name, row, column] of [['URL cell A2', 2, 1], ['old H3', 3, 8], ['interim F3', 3, 6]]) {
+  test('timestamp writer rejects ' + name, () => {
+    const f = timestampFixture();
+    assert.throws(() => f.save(() => ({fields: [], relatedWrites: [{sheet: 'Info', row, column, values: [['new timestamp']]}]})), /Info!A3/);
+    assert.equal(f.infoWrites.length, 0);
+    assert.equal(f.grid[1][0], 'imports URL');
+  });
+}
+
+test('preview leaves the A3 timestamp unchanged', () => {
+  const f = timestampFixture();
+  const result = f.save(() => ({fields: [], dryRun: true,
+    relatedWrites: [{sheet: 'Info', row: 3, column: 1, values: [['new timestamp']]}]}));
+  assert.equal(result.dryRun, true);
+  assert.equal(f.grid[2][0], 'old timestamp');
+  assert.equal(f.infoWrites.length, 0);
+});

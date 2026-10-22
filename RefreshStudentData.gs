@@ -25,7 +25,7 @@
  * Course grades from the CourseGrades tab are part of the Master refresh.
  * The Grades tab is written after Master is
  * saved, under its own lock; a Grades tab problem is reported in the dialog and
- * never undoes the Master refresh. Menus are built by Menus.gs. Info!H2 holds the separate imports workbook URL.
+ * never undoes the Master refresh. Menus are built by Menus.gs. Info!A2 holds the separate imports workbook URL.
  * Source is READ ONLY. The planner performs no writes; saveToMaster saves everything.
  */
 const STUDENT_REFRESH = (() => {
@@ -390,7 +390,7 @@ const STUDENT_REFRESH = (() => {
       saveToMaster(master => {
         const result = build(ss, master, data);
         report = result.report;
-        result.relatedWrites.push({sheet: 'Info', row: 3, column: 8,
+        result.relatedWrites.push({sheet: 'Info', row: 3, column: 1,
           values: [[Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd HH:mm:ss z')]]});
         return {fields: result.fields, relatedWrites: result.relatedWrites, dryRun: preview, bulk: true};
       });
@@ -436,4 +436,3 @@ const STUDENT_REFRESH = (() => {
 })();
 function previewStudentRefresh() { return STUDENT_REFRESH.run(true); }
 function refreshStudentData() { return STUDENT_REFRESH.run(false); }
-

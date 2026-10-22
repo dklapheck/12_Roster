@@ -122,17 +122,17 @@ const CONFIG = (() => {
     return key;
   }
 
-  /** Read-only imports workbook named in Info!H2. */
+  /** Read-only imports workbook named in Info!A2. */
   function sourceWorkbook(ss) {
     const info = ss.getSheetByName('Info');
     if (!info) throw new Error('Info tab is missing.');
-    const url = text(info.getRange('H2').getValue());
+    const url = text(info.getRange('A2').getValue());
     const match = url.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)(?:[/?#].*)?$/);
-    if (!match) throw new Error('Put the imports workbook Google Sheets URL in Info!H2.');
-    if (match[1] === ID) throw new Error('Info!H2 must point to the separate imports workbook, not ' + WORKBOOK_NAME + '.');
+    if (!match) throw new Error('Put the imports workbook Google Sheets URL in Info!A2.');
+    if (match[1] === ID) throw new Error('Info!A2 must point to the separate imports workbook, not ' + WORKBOOK_NAME + '.');
     try { return SpreadsheetApp.openById(match[1]); }
     catch (error) {
-      throw new Error('Cannot read the imports workbook in Info!H2. Check the URL and this account\u2019s access. ' + error.message);
+      throw new Error('Cannot read the imports workbook in Info!A2. Check the URL and this account\u2019s access. ' + error.message);
     }
   }
 
