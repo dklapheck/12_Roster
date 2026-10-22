@@ -1,16 +1,17 @@
-/** 12RosterORN Call Due colors v2.0. Master only (the ECC tab was removed).
+/** 12RosterORN Call Due colors v2.1. Master only (the ECC tab was removed).
  * Requires Config.gs. Menu: Update > ECC Tools > Refresh Call Due colors.
  * Pull Data > Refresh students also reapplies these rules at the end of each run.
  *
  * Colors the ECC Date and Call Due cells on Master by when the
  * student's next ECC is due:
- *   due date = ECC Date + 20 weekdays (WORKDAY), or Upstream's Call Due when
- *   there is no ECC Date yet. (ECC calls are due every 20 school days; weekdays
- *   are used to stay on the safe side, since holidays only push the real date later.)
+ *   due date = the later of ECC Date + 20 weekdays (WORKDAY) and Call Due.
+ *   If only ECC Date is valid, use ECC Date + 20 weekdays; if only Call Due
+ *   is valid, use Call Due. Invalid or missing dates do not enter the comparison.
+ *   WORKDAY skips weekends, but no holiday or school-break calendar is supplied.
  *
  *   No ECC Date and no Call Due  -> maroon, white text
- *   Overdue (due before today)   -> red, white text
- *   Due within 2 weekdays        -> hot pink
+ *   Overdue (later deadline passed) -> red, white text
+ *   Due today or within 2 weekdays -> hot pink
  *   Due in 3-5 weekdays          -> orange
  *   Due in 6-10 weekdays         -> yellow
  *   Due in 11+ weekdays          -> green
@@ -36,7 +37,11 @@ const CALL_DUE_COLORS = (() => {
   function formulas(eccLetter, dueLetter, idLetter) {
     const e = '$' + eccLetter + '2', c = '$' + dueLetter + '2', s = '$' + idLetter + '2';
     const has = 'OR(ISNUMBER(' + e + '),ISNUMBER(' + c + '))';
-    const due = 'IF(ISNUMBER(' + e + '),WORKDAY(' + e + ',' + WEEKDAYS + '),' + c + ')';
+    const eccDue = 'WORKDAY(' + e + ',' + WEEKDAYS + ')';
+    // Compare both deadlines when present; otherwise use the one valid deadline.
+    // The final 0 keeps comparisons safe when neither date is valid; has excludes that row.
+    const due = 'IF(ISNUMBER(' + e + '),IF(ISNUMBER(' + c + '),MAX(' + eccDue + ',' + c + '),' +
+      eccDue + '),IF(ISNUMBER(' + c + '),' + c + ',0))';
     const list = [{name: 'missing', formula: '=AND(' + MARK + ',' + s + '<>"",NOT(' + has + '))', background: '#7B1113', font: '#FFFFFF'}];
     BANDS.forEach(([name, test, background, font]) => {
       list.push({name, formula: '=AND(' + MARK + ',' + has + ',' + test(due) + ')', background, font});
