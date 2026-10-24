@@ -11,7 +11,7 @@ Automation. Don't have multiple tabs sync.
    **Info!A3** for the automatic refresh timestamp. **Info!C1:C5** holds these
    setup instructions.
 4. Save the script, run `installRosterTools`, and authorize it if prompted.
-   Reload the spreadsheet, then use **Update → Pull Data → Preview source changes**
+   Reload the spreadsheet, then use **Update → Refresh Roster Data → Preview source changes**
    before refreshing.
 
 For an existing roster moved to this layout, sync the updated `Config.gs`,
@@ -25,7 +25,7 @@ students with blank source values retain their current values, and the refresh
 report flags blank/missing source fields. These two fields follow the normal
 refresh flow; Welcome Email, SCC Completion, and ISMA keep their separate review.
 
-After installing this update, run **Update → Pull Data → Preview source changes**
+After installing this update, run **Update → Refresh Roster Data → Preview source changes**
 to check the Learning Coach and LC Email changes, then **Refresh students,
 contacts and grades** to save them. Install both `RefreshStudentData.gs` and
 `AddStudents.gs` in the bound Apps Script project.
@@ -39,3 +39,41 @@ Preview shows proposed changes without saving them. Install the updated
 `RefreshStudentData.gs` and `AddStudents.gs`, then run the refresh to populate
 the column. The live Master header has already been changed to `% Passing`.
 Grade-report photo imports still target the separate **Grades** tab.
+
+## Archive and log ECC conversations and attempts
+
+Install `EccBulk.gs` and `EccBulkDialog.html` along with the updated `LogECC.gs`,
+`EccPowerSchool.gs`, and `Menus.gs` in the bound Apps Script project, then reload
+the spreadsheet. This PR does not deploy the bound script automatically.
+
+**Update → Archive and Log All ECC** reviews all Master students, including hidden
+and filtered rows. Every conversation with content in ECC Overall, ECC Classes,
+ECC Grades, or ECC Social is checked by default. ECC Follow-up is included in
+conversation notes, but does not qualify a student by itself. Every nonblank
+New Attempt Student Contact is offered as a separately checked attempt.
+
+The review uses the existing ECC Date and ECC Attempt Date without changing
+them. Dates before today in the spreadsheet's timezone are flagged. Correct
+missing/invalid dates on Master and reopen the review, or uncheck those entries.
+Search narrows the display only; Select all and Clear all apply to the full list.
+The selection count includes checked entries hidden by search.
+
+Click **Archive and Open PowerSchool Tabs** to save the checked entries into
+ECC Contact History, newest date first, and open one PowerSchool tab per entry.
+A conversation and attempt for the same student create two history entries and
+two tabs. The notes and dates remain on Master. Review and submit each log in
+PowerSchool, then manually delete the source notes when done. Unchanged notes
+are offered and archived again on a new run; there is no duplicate-note filter.
+Individual ECC archive actions also archive repeated notes.
+
+The dialog reserves blank tabs during the button click and sends them to
+PowerSchool only after the archive succeeds. If the browser blocks tabs, use
+**Open remaining tabs** or the individual entry links. Reopening links does not
+archive again. An expired review must be reopened; changes to reviewed notes or
+dates cancel the selected batch before saving. Sorts are supported because
+students are matched by Student Number. Script saves share the roster's lock
+and rollback path; direct manual sheet edits are not blocked by that lock.
+
+Archive and Log All ECC and Open Student Demographics are both at the top of
+Update and repeated under **ECC & Demographics**. The remaining submenus are
+Call / SCC, Refresh Roster Data, Grade Report Photos, WIG, and Maintenance.

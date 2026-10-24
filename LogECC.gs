@@ -1,4 +1,4 @@
-/** LogECC v3.0 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
+/** LogECC v4.0 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
  * Menus are built by Menus.gs.
  * v3.0: Master only. Select the student's row on Master. The one-time Old
  * Attempts merge was removed (that column is gone).
@@ -40,10 +40,6 @@ const ECC_LOG = (() => {
     if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2100) return null;
     return year * 10000 + month * 100 + day;
   }
-  function contains(history, entry) {
-    return ('\n\n' + String(history || '').replace(/\r\n?/g, '\n').trim() + '\n\n')
-      .includes('\n\n' + entry.trim() + '\n\n');
-  }
   /** Puts entry above the first dated entry on or before its date (newest first). */
   function insertByDate(history, entry, entryDate) {
     const existing = String(history == null ? '' : history).replace(/\r\n?/g, '\n').trim();
@@ -79,14 +75,53 @@ const ECC_LOG = (() => {
     const width = Math.max(...columns.values());
     const range = sheet.getRange(row, 1, 1, width);
     const values = range.getValues()[0], formulas = range.getFormulas()[0];
+    return valueReader(values, formulas, columns);
+  }
+  function valueReader(values, formulas, columns) {
     return {
       get(header) {
         const column = columns.get(header);
-        if (!column) throw new Error(sheet.getName() + ' is missing the field: ' + header);
-        if (formulas[column - 1]) throw new Error('Use a value in the editable field: ' + header + ' (' + sheet.getName() + ').');
+        if (!column) throw new Error('Master is missing the field: ' + header);
+        if (formulas[column - 1]) throw new Error('Use a value in the editable field: ' + header + ' (Master).');
         return values[column - 1];
       }
     };
+  }
+
+  /** Shared formatter for individual and bulk logging. Dates are never changed. */
+  function readEntry(central, type, ss) {
+    if (!['Conversation', 'Attempt'].includes(type)) throw new Error('Unknown ECC entry type.');
+    const attempt = type === 'Attempt';
+    const dateHeader = attempt ? FIELDS.attemptDate : FIELDS.date;
+    const date = central.get(dateHeader);
+    if (!(date instanceof Date) || isNaN(date.getTime())) throw new Error('Enter a valid date in ' + dateHeader + '.');
+    const label = Utilities.formatDate(date, ss.getSpreadsheetTimeZone(), 'M/d/yyyy');
+    const lines = ['-- ' + label + ' [' + type + ']'], powerSchoolLines = [];
+    if (attempt) {
+      const note = text(central.get(FIELDS.attemptNote));
+      if (!note) throw new Error('Enter New Attempt Student Contact first.');
+      lines.push(note); powerSchoolLines.push(note);
+    } else {
+      FIELDS.notes.forEach(([header, category, powerSchoolLabel]) => {
+        const note = text(central.get(header));
+        if (!note) return;
+        const powerSchool = powerSchoolLabel || category;
+        lines.push(category ? category + ': ' + note : note);
+        powerSchoolLines.push(powerSchool ? powerSchool + ': ' + note : note);
+      });
+      if (lines.length === 1) throw new Error('Enter at least one ECC note.');
+    }
+    return {type, date: label, entryDate: dateNumber(label.match(/^(\d+)\/(\d+)\/(\d+)$/)),
+      note: lines.join('\n'), powerSchoolNote: powerSchoolLines.join('\n')};
+  }
+
+  /** Repeated entries are intentional; teachers clear source notes manually. */
+  function append(history, entry, key) {
+    const updated = insertByDate(history, entry.note, entry.entryDate);
+    if (updated.length > CELL_LIMIT) {
+      throw new Error('ECC Contact History for ' + key + ' would pass the 50,000-character cell limit. Move older entries elsewhere first.');
+    }
+    return {value: updated, nearLimit: updated.length > CELL_WARNING};
   }
 
   // ---- archive -----------------------------------------------------------
@@ -105,51 +140,23 @@ const ECC_LOG = (() => {
       }
       clock.lap('prepare');
       saveToMaster(master => {
-        const attempt = type === 'Attempt';
         const masterRow = master.rows.get(key);
         if (!masterRow) throw new Error('Student ' + key + ' is not on Master.');
         const central = rowReader(master.sheet, masterRow, master.columns);
-        const dateHeader = attempt ? FIELDS.attemptDate : FIELDS.date;
-        const date = central.get(dateHeader);
-        if (!(date instanceof Date) || isNaN(date.getTime())) {
-          throw new Error('Enter a valid date in ' + dateHeader + '.');
-        }
-        const label = Utilities.formatDate(date, ss.getSpreadsheetTimeZone(), 'M/d/yyyy');
-        const lines = ['-- ' + label + ' [' + type + ']'], powerSchoolLines = [];
-        if (attempt) {
-          const note = text(central.get(FIELDS.attemptNote));
-          if (!note) throw new Error('Enter New Attempt Student Contact first.');
-          lines.push(note); powerSchoolLines.push(note);
-        } else {
-          FIELDS.notes.forEach(([header, category, powerSchoolLabel]) => {
-            const note = text(central.get(header));
-            if (!note) return;
-            const powerSchool = powerSchoolLabel || category;
-            lines.push(category ? category + ': ' + note : note);
-            powerSchoolLines.push(powerSchool ? powerSchool + ': ' + note : note);
-          });
-          if (lines.length === 1) throw new Error('Enter at least one ECC note.');
-        }
-        const note = lines.join('\n');
-        const history = central.get(FIELDS.history);
-        const duplicate = contains(history, note);
-        const updated = duplicate ? '' : insertByDate(history, note, dateNumber(label.match(/^(\d+)\/(\d+)\/(\d+)$/)));
-        if (updated.length > CELL_LIMIT) {
-          throw new Error('ECC Contact History for ' + key + ' would pass the 50,000-character cell limit. Move older entries elsewhere first.');
-        }
-        payload = {studentNumber: key, date: label, outcome: 'ECC ' + type, duplicate,
-          note: openPowerSchool ? POWERSCHOOL.withOpening(settings, powerSchoolLines.join('\n')) : note,
-          nearLimit: updated.length > CELL_WARNING};
-        return duplicate ? [] : [{studentNumber: key, header: FIELDS.history, value: updated}];
+        const entry = readEntry(central, type, ss);
+        const updated = append(central.get(FIELDS.history), entry, key);
+        payload = {studentNumber: key, date: entry.date, outcome: 'ECC ' + type,
+          note: openPowerSchool ? POWERSCHOOL.withOpening(settings, entry.powerSchoolNote) : entry.note,
+          nearLimit: updated.nearLimit};
+        return [{studentNumber: key, header: FIELDS.history, value: updated.value}];
       });
       archived = true;
       clock.lap('save');
       // Open PowerSchool first so nothing else delays the dialog.
       if (openPowerSchool) { POWERSCHOOL.open(payload, settings); clock.lap('dialog'); }
-      ss.toast((payload.duplicate ? 'This ECC entry was already archived.' : 'ECC entry saved to Master.') +
+      ss.toast('ECC entry saved to Master.' +
         (payload.nearLimit ? ' History is close to the cell size limit.' : ''), 'ECC Tools', 6);
-      CONFIG.log('INFO', action, key, payload.duplicate ? 'Entry already archived; no duplicate added.' :
-        'Entry archived to Master.', JSON.stringify({type, ms: clock.done()}));
+      CONFIG.log('INFO', action, key, 'Entry archived to Master.', JSON.stringify({type, ms: clock.done()}));
       return payload;
     } catch (error) {
       const message = (archived ? 'Entry is saved; PowerSchool did not open. ' : 'ECC archive failed. ') + error.message;
@@ -169,7 +176,7 @@ const ECC_LOG = (() => {
       return [];
     });
   }
-  return Object.freeze({archive, validate});
+  return Object.freeze({archive, validate, readEntry, append, valueReader, FIELDS});
 })();
 
 function archiveEccConversation() { return ECC_LOG.archive('Conversation', false); }
