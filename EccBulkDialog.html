@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_blank">
+  <meta charset="utf-8">
+  <style>
+    body { font: 14px Arial, sans-serif; color: #202124; margin: 20px; line-height: 1.45; }
+    h2 { margin: 0 0 8px; font-size: 20px; }
+    .muted { color: #5f6368; }
+    .toolbar, .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+    input[type=search] { padding: 8px; flex: 1; min-width: 180px; }
+    button { padding: 8px 12px; cursor: pointer; }
+    button:disabled { cursor: default; }
+    .primary { background: #174ea6; color: white; border: 1px solid #174ea6; border-radius: 4px; }
+    .scroll { max-height: 330px; overflow: auto; border: 1px solid #dadce0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #dadce0; vertical-align: top; }
+    th { background: #f1f3f4; position: sticky; top: 0; }
+    input[type=checkbox] { width: 18px; height: 18px; }
+    .old { color: #7a4500; background: #fff2cc; padding: 2px 5px; display: inline-block; }
+    .error { color: #a50e0e; }
+    pre { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
+    #status { min-height: 22px; }
+    #results a { display: inline-block; padding: 4px 0; }
+  </style>
+</head>
+<body>
+  <h2>Choose ECC conversations and attempts</h2>
+  <p class="muted">Scope: all students on Master, including filtered and hidden rows. Existing dates are kept.
+    Older dates are flagged. Notes remain until you delete them after logging in PowerSchool.</p>
+  <div id="review">
+    <div class="toolbar">
+      <button class="reviewControl" id="selectAll" disabled>Select all</button>
+      <button class="reviewControl" id="clearAll" disabled>Clear all</button>
+      <input class="reviewControl" id="search" type="search" placeholder="Search students" aria-label="Search students" disabled>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Include</th><th>Student</th><th>Entry</th><th>Roster date</th><th>Notes / review</th></tr></thead>
+        <tbody id="entries"></tbody>
+      </table>
+    </div>
+    <p id="summary"></p>
+  </div>
+  <div class="actions">
+    <button class="primary" id="save" disabled>Archive and Open PowerSchool Tabs</button>
+    <button id="remaining" hidden>Open remaining tabs</button>
+    <button id="close">Cancel</button>
+  </div>
+  <p id="status" role="status" aria-live="polite">Loading ECC notes…</p>
+  <div id="results"></div>
+  <script>
+    const byId = id => document.getElementById(id);
+    let review, rows = [], saved = false, busy = false, tabs = new Map(), links = [];
+    function status(message, error = false) {
+      byId('status').textContent = message;
+      byId('status').className = error ? 'error' : '';
+    }
+    function selected() { return rows.filter(row => row.box.checked); }
+    function summarize() {
+      const picked = selected(), students = new Set(picked.map(row => row.entry.studentNumber)).size;
+      const conversations = picked.filter(row => row.entry.type === 'Conversation').length;
+      byId('summary').textContent = students + ' students selected · ' + conversations +
+        ' conversations · ' + (picked.length - conversations) + ' attempts';
+      byId('save').disabled = busy || saved || !picked.length;
+    }
+    function render(data) {
+      review = data;
+      data.entries.forEach(entry => {
+        const tr = document.createElement('tr');
+        const include = tr.insertCell(), box = document.createElement('input');
+        box.type = 'checkbox'; box.checked = true; box.className = 'reviewControl';
+        box.setAttribute('aria-label', 'Include ' + entry.label + ' ' + entry.type);
+        box.addEventListener('change', summarize); include.append(box);
+        tr.insertCell().textContent = entry.label + ' — ' + entry.studentNumber;
+        tr.insertCell().textContent = entry.type === 'Conversation' ? 'ECC success / conversation' : 'ECC attempt';
+        const date = tr.insertCell(); date.textContent = entry.date || 'Missing / invalid';
+        if (entry.oldDate) {
+          const flag = document.createElement('div'); flag.textContent = 'Older than today'; flag.className = 'old'; date.append(flag);
+        }
+        const notes = tr.insertCell();
+        if (entry.error) {
+          const error = document.createElement('div'); error.textContent = entry.error; error.className = 'error'; notes.append(error);
+        }
+        if (entry.note) {
+          const details = document.createElement('details'), summary = document.createElement('summary'), body = document.createElement('pre');
+          summary.textContent = 'View complete note'; body.textContent = entry.note;
+          details.append(summary, body); notes.append(details);
+        }
+        byId('entries').append(tr); rows.push({entry, box, tr});
+      });
+      document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = false; });
+      summarize(); status(data.entries.length ? 'Review the checked entries, then archive and open PowerSchool.' : 'No ECC conversations or attempts to archive.');
+    }
+    function choose(checked) { rows.forEach(row => { row.box.checked = checked; }); summarize(); }
+    function openBlank() {
+      let tab;
+      try {
+        tab = window.open('about:blank', '_blank');
+        if (tab) {
+          tab.opener = null;
+          tab.document.body.textContent = 'Archiving ECC entry. PowerSchool will open after the save completes.';
+        }
+      } catch (_) { if (tab) tab.close(); return null; }
+      return tab;
+    }
+    function closePlaceholders() {
+      tabs.forEach(tab => { try { if (tab && !tab.closed) tab.close(); } catch (_) {} });
+      tabs.clear();
+    }
+    function navigate(link, tab) {
+      try {
+        if (!tab || tab.closed) return false;
+        tab.location.replace(link.url); return true;
+      } catch (_) { try { tab.close(); } catch (_) {} return false; }
+    }
+    function updateRemaining() {
+      const unopened = links.filter(link => !link.opened).length;
+      byId('remaining').hidden = !unopened;
+      byId('remaining').textContent = 'Open remaining tabs (' + unopened + ')';
+      status(links.length + ' entries archived. ' + (links.length - unopened) + ' PowerSchool tabs opened.' +
+        (unopened ? ' Use Open remaining tabs or the individual links below.' : '') +
+        ' Review and submit each log in PowerSchool.');
+    }
+    function finish(result) {
+      saved = true; busy = false; links = result.links;
+      links.forEach(link => {
+        link.opened = navigate(link, tabs.get(link.id));
+        const p = document.createElement('p'), a = document.createElement('a');
+        a.href = link.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.textContent = 'Open ' + link.label + ' — ' + link.type + ' — ' + link.date;
+        a.addEventListener('click', () => { link.opened = true; updateRemaining(); });
+        p.append(a);
+        if (link.nearLimit) p.append(document.createTextNode(' — History is close to the cell size limit.'));
+        byId('results').append(p);
+      });
+      byId('close').disabled = false; byId('close').textContent = 'Close';
+      byId('save').hidden = true; summarize(); updateRemaining();
+    }
+    function archive() {
+      if (busy || saved) return;
+      const picked = selected();
+      if (!picked.length) return;
+      if (picked.some(row => row.entry.error)) {
+        status('Correct the flagged entries on Master and reopen this review, or uncheck them before saving.', true); return;
+      }
+      busy = true;
+      document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = true; });
+      byId('close').disabled = true; summarize();
+      // Reserve tabs during the click, before the asynchronous Apps Script call.
+      // Only navigate to PowerSchool after the whole archive has succeeded.
+      picked.forEach(row => tabs.set(row.entry.id, openBlank()));
+      status('Archiving ' + picked.length + ' entries…');
+      google.script.run.withSuccessHandler(finish).withFailureHandler(error => {
+        closePlaceholders(); busy = false;
+        document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = false; });
+        byId('close').disabled = false; summarize(); status(error.message, true);
+      }).archiveSelectedEcc(review.token, picked.map(row => row.entry.id));
+    }
+    byId('selectAll').addEventListener('click', () => choose(true));
+    byId('clearAll').addEventListener('click', () => choose(false));
+    byId('search').addEventListener('input', () => {
+      const query = byId('search').value.toLowerCase().trim();
+      rows.forEach(row => { row.tr.hidden = !(row.entry.label + ' ' + row.entry.studentNumber).toLowerCase().includes(query); });
+    });
+    byId('save').addEventListener('click', archive);
+    byId('close').addEventListener('click', () => { if (!busy) google.script.host.close(); });
+    byId('remaining').addEventListener('click', () => {
+      links.filter(link => !link.opened).forEach(link => { link.opened = navigate(link, openBlank()); });
+      updateRemaining();
+    });
+    google.script.run.withSuccessHandler(render).withFailureHandler(error => status(error.message, true)).getEccBulkReview();
+  </script>
+</body>
+</html>

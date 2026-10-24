@@ -219,6 +219,14 @@ function showPowerSchoolHandoffDialog_(type, payload, title) {
       .map(function(line) { return line.replace(/\s+/g, ' ').trim(); })
       .filter(Boolean).join(' | ');
   }
+  /** Build a handoff without opening a modal (used by the bulk ECC dialog). */
+  function url(type, payload, settings, requestId) {
+    CONFIG.workbook();
+    const data = Object.assign({}, payload, {v: 1, requestId: requestId || Utilities.getUuid()});
+    if (typeof data.note === 'string') data.note = oneLine(data.note);
+    if (settings) data.settings = settings;
+    return buildPowerSchoolHandoffUrl_(type, encodePowerSchoolHandoffPayload_(data));
+  }
   function handoff(type, payload, settings) {
     CONFIG.workbook();
     const title = type === 'demographics' ? 'Open PowerSchool Demographics' :
@@ -244,5 +252,5 @@ function showPowerSchoolHandoffDialog_(type, payload, title) {
       date: payload.date, note: payload.note, outcome: payload.outcome
     }, settings);
   }
-  return Object.freeze({settings: readSettings, open, handoff, withOpening, oneLine});
+  return Object.freeze({settings: readSettings, open, handoff, withOpening, oneLine, url});
 })();

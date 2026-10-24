@@ -1,6 +1,6 @@
 /** 12RosterORN Call Due colors v3.0. Master only (the ECC tab was removed).
- * Requires Config.gs. Menu: Update > ECC Tools > Refresh Call Due colors.
- * Pull Data > Refresh students also reapplies these rules at the end of each run.
+ * Requires Config.gs. Menu: Update > Maintenance > Refresh Call Due colors.
+ * Refresh Roster Data > Refresh students also reapplies these rules at the end of each run.
  *
  * Colors each date column on Master independently:
  *   ECC Date: use 20 weekdays after that cell's date (WORKDAY).
