@@ -1,4 +1,4 @@
-/** Review all Master ECC notes, archive selected entries, and prepare PS tabs.
+/** Review all Master ECC notes, archive selected entries, and queue PS logs.
  * Requires LogECC.gs, EccPowerSchool.gs, Config.gs and MasterSave.gs.
  * Reviews use per-editor tokens. Only IDs are accepted from the dialog; source
  * dates/notes are checked again by Student Number before saving. Reopening the
@@ -121,7 +121,7 @@ const ECC_BULK = (() => {
             studentNumber: key, date: entry.date, outcome: 'ECC ' + type,
             note: POWERSCHOOL.withOpening(settings[type], entry.powerSchoolNote)
           }, settings[type], reviewed.requestId);
-          links.push({id, label: record.label, type, date: entry.date, url, nearLimit});
+          links.push({id, studentNumber: key, label: record.label, type, date: entry.date, url, nearLimit});
         });
         result = {links, students: new Set(links.map(link => link.id.split('|')[0])).size};
         // Retrying the same dialog after a lost response returns the same links,
