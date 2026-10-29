@@ -21,7 +21,8 @@
     .error { color: #a50e0e; }
     pre { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
     #status { min-height: 22px; }
-    #results a { display: inline-block; padding: 4px 0; }
+    #currentStudent { font-weight: bold; font-size: 17px; }
+    #queue { border: 1px solid #dadce0; border-radius: 4px; padding: 14px; margin: 12px 0; }
   </style>
 </head>
 <body>
@@ -29,6 +30,9 @@
   <p class="muted">Scope: all students on Master, including filtered and hidden rows. Existing dates are kept.
     Older dates are flagged. Notes remain until you delete them after logging in PowerSchool.</p>
   <div id="review">
+    <p>Keep only one PowerSchool student tab open while logging. Opening another student can change where a log is saved.</p>
+    <label><input class="reviewControl" id="ready" type="checkbox" disabled>
+      I have closed all other PowerSchool student tabs and will keep them closed while logging.</label>
     <div class="toolbar">
       <button class="reviewControl" id="selectAll" disabled>Select all</button>
       <button class="reviewControl" id="clearAll" disabled>Clear all</button>
@@ -43,15 +47,23 @@
     <p id="summary"></p>
   </div>
   <div class="actions">
-    <button class="primary" id="save" disabled>Archive and Open PowerSchool Tabs</button>
-    <button id="remaining" hidden>Open remaining tabs</button>
+    <button class="primary" id="save" disabled>Archive and Start Logging</button>
     <button id="close">Cancel</button>
   </div>
+  <section id="queue" hidden aria-label="PowerSchool logging queue">
+    <p id="queueProgress"></p>
+    <p id="currentStudent"></p>
+    <p>Submit this log in PowerSchool, verify it appears under the student shown above, then close that PowerSchool tab.
+      Closing a tab alone does not confirm the log was saved.</p>
+    <button id="openCurrent">Open current entry</button>
+    <p><label><input id="verified" type="checkbox" disabled> <span id="verifyLabel"></span></label></p>
+    <button class="primary" id="next" disabled>Verified — open next entry</button>
+  </section>
   <p id="status" role="status" aria-live="polite">Loading ECC notes…</p>
   <div id="results"></div>
   <script>
     const byId = id => document.getElementById(id);
-    let review, rows = [], saved = false, busy = false, tabs = new Map(), links = [];
+    let review, rows = [], saved = false, busy = false, activeTab = null, links = [], position = 0, currentOpened = false;
     function status(message, error = false) {
       byId('status').textContent = message;
       byId('status').className = error ? 'error' : '';
@@ -62,7 +74,7 @@
       const conversations = picked.filter(row => row.entry.type === 'Conversation').length;
       byId('summary').textContent = students + ' students selected · ' + conversations +
         ' conversations · ' + (picked.length - conversations) + ' attempts';
-      byId('save').disabled = busy || saved || !picked.length;
+      byId('save').disabled = busy || saved || !picked.length || !byId('ready').checked;
     }
     function render(data) {
       review = data;
@@ -90,7 +102,7 @@
         byId('entries').append(tr); rows.push({entry, box, tr});
       });
       document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = false; });
-      summarize(); status(data.entries.length ? 'Review the checked entries, then archive and open PowerSchool.' : 'No ECC conversations or attempts to archive.');
+      summarize(); status(data.entries.length ? 'Review the checked entries and close all other PowerSchool student tabs before starting.' : 'No ECC conversations or attempts to archive.');
     }
     function choose(checked) { rows.forEach(row => { row.box.checked = checked; }); summarize(); }
     function openBlank() {
@@ -99,76 +111,111 @@
         tab = window.open('about:blank', '_blank');
         if (tab) {
           tab.opener = null;
-          tab.document.body.textContent = 'Archiving ECC entry. PowerSchool will open after the save completes.';
+          tab.document.body.textContent = 'Preparing one ECC entry. Keep other PowerSchool student tabs closed.';
         }
       } catch (_) { if (tab) tab.close(); return null; }
       return tab;
     }
-    function closePlaceholders() {
-      tabs.forEach(tab => { try { if (tab && !tab.closed) tab.close(); } catch (_) {} });
-      tabs.clear();
+    function tabIsOpen() {
+      if (!activeTab) return false;
+      // If the browser cannot report closure, do not open another student.
+      try { return !activeTab.closed; } catch (_) { return true; }
     }
-    function navigate(link, tab) {
+    function navigate(link) {
       try {
-        if (!tab || tab.closed) return false;
-        tab.location.replace(link.url); return true;
-      } catch (_) { try { tab.close(); } catch (_) {} return false; }
+        if (!activeTab || activeTab.closed) return false;
+        activeTab.location.replace(link.url); currentOpened = true; return true;
+      } catch (_) { try { activeTab.close(); } catch (_) {} return false; }
     }
-    function updateRemaining() {
-      const unopened = links.filter(link => !link.opened).length;
-      byId('remaining').hidden = !unopened;
-      byId('remaining').textContent = 'Open remaining tabs (' + unopened + ')';
-      status(links.length + ' entries archived. ' + (links.length - unopened) + ' PowerSchool tabs opened.' +
-        (unopened ? ' Use Open remaining tabs or the individual links below.' : '') +
-        ' Review and submit each log in PowerSchool.');
+    function refreshQueue() {
+      if (!saved) return;
+      const done = position >= links.length;
+      byId('queueProgress').textContent = position + ' of ' + links.length + ' logs confirmed by you.';
+      byId('openCurrent').disabled = done;
+      byId('verified').disabled = done || !currentOpened;
+      byId('next').disabled = done || !currentOpened || !byId('verified').checked || tabIsOpen();
+      if (done) {
+        byId('currentStudent').textContent = 'Logging queue complete.';
+        byId('verifyLabel').textContent = 'All queued entries were confirmed by you.';
+        status(links.length + ' entries archived and confirmed by you. Source notes remain on Master for manual deletion.');
+        return;
+      }
+      const link = links[position], student = link.label + ' — ' + link.studentNumber;
+      byId('currentStudent').textContent = 'Entry ' + (position + 1) + ' of ' + links.length + ': ' + student + ' — ' + link.type + ' — ' + link.date;
+      byId('verifyLabel').textContent = 'I submitted this log and verified it appears under ' + student + '.';
+      byId('next').textContent = position === links.length - 1 ? 'Verified — finish logging' : 'Verified — open next entry';
+      byId('openCurrent').textContent = tabIsOpen() ? 'Return to current PowerSchool tab' : currentOpened ? 'Reopen current entry' : 'Open current entry';
+      status(links.length + ' entries archived. ' + (tabIsOpen() ? 'Finish this student, verify the saved log, and close the PowerSchool tab before continuing.' :
+        currentOpened ? 'Confirm the saved log belongs to this student before continuing.' : 'Use Open current entry to begin.'));
     }
     function finish(result) {
       saved = true; busy = false; links = result.links;
+      byId('queue').hidden = false;
       links.forEach(link => {
-        link.opened = navigate(link, tabs.get(link.id));
-        const p = document.createElement('p'), a = document.createElement('a');
-        a.href = link.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        a.textContent = 'Open ' + link.label + ' — ' + link.type + ' — ' + link.date;
-        a.addEventListener('click', () => { link.opened = true; updateRemaining(); });
-        p.append(a);
+        const p = document.createElement('p');
+        p.textContent = link.label + ' — ' + link.studentNumber + ' — ' + link.type + ' — ' + link.date;
         if (link.nearLimit) p.append(document.createTextNode(' — History is close to the cell size limit.'));
         byId('results').append(p);
       });
+      // Only the first student may navigate after saving. Later entries require
+      // a new click, explicit saved-student confirmation, and the old tab closed.
+      if (links.length) navigate(links[0]);
       byId('close').disabled = false; byId('close').textContent = 'Close';
-      byId('save').hidden = true; summarize(); updateRemaining();
+      byId('save').hidden = true; summarize(); refreshQueue();
+    }
+    function openCurrent() {
+      if (!saved || position >= links.length) return;
+      if (tabIsOpen()) { try { activeTab.focus(); } catch (_) {} return; }
+      // Reopening is the same queue item, never a later student.
+      byId('verified').checked = false;
+      activeTab = openBlank(); navigate(links[position]); refreshQueue();
+    }
+    function nextEntry() {
+      if (!saved || position >= links.length || !currentOpened || !byId('verified').checked || tabIsOpen()) return;
+      position++; currentOpened = false; activeTab = null; byId('verified').checked = false;
+      if (position < links.length) openCurrent();
+      refreshQueue();
     }
     function archive() {
       if (busy || saved) return;
       const picked = selected();
       if (!picked.length) return;
+      if (!byId('ready').checked) {
+        status('Close all other PowerSchool student tabs, then check the confirmation before starting.', true); return;
+      }
       if (picked.some(row => row.entry.error)) {
         status('Correct the flagged entries on Master and reopen this review, or uncheck them before saving.', true); return;
       }
       busy = true;
       document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = true; });
       byId('close').disabled = true; summarize();
-      // Reserve tabs during the click, before the asynchronous Apps Script call.
-      // Only navigate to PowerSchool after the whole archive has succeeded.
-      picked.forEach(row => tabs.set(row.entry.id, openBlank()));
+      // Reserve ONE tab during the click. Never pre-open another student.
+      activeTab = openBlank();
       status('Archiving ' + picked.length + ' entries…');
       google.script.run.withSuccessHandler(finish).withFailureHandler(error => {
-        closePlaceholders(); busy = false;
+        try { if (activeTab && !activeTab.closed) activeTab.close(); } catch (_) {}
+        activeTab = null; busy = false;
         document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = false; });
         byId('close').disabled = false; summarize(); status(error.message, true);
       }).archiveSelectedEcc(review.token, picked.map(row => row.entry.id));
     }
     byId('selectAll').addEventListener('click', () => choose(true));
     byId('clearAll').addEventListener('click', () => choose(false));
+    byId('ready').addEventListener('change', summarize);
     byId('search').addEventListener('input', () => {
       const query = byId('search').value.toLowerCase().trim();
       rows.forEach(row => { row.tr.hidden = !(row.entry.label + ' ' + row.entry.studentNumber).toLowerCase().includes(query); });
     });
     byId('save').addEventListener('click', archive);
-    byId('close').addEventListener('click', () => { if (!busy) google.script.host.close(); });
-    byId('remaining').addEventListener('click', () => {
-      links.filter(link => !link.opened).forEach(link => { link.opened = navigate(link, openBlank()); });
-      updateRemaining();
+    byId('close').addEventListener('click', () => {
+      if (busy) return;
+      if (tabIsOpen()) { status('Close the current PowerSchool student tab before closing this queue.', true); return; }
+      google.script.host.close();
     });
+    byId('openCurrent').addEventListener('click', openCurrent);
+    byId('verified').addEventListener('change', refreshQueue);
+    byId('next').addEventListener('click', nextEntry);
+    setInterval(refreshQueue, 500);
     google.script.run.withSuccessHandler(render).withFailureHandler(error => status(error.message, true)).getEccBulkReview();
   </script>
 </body>

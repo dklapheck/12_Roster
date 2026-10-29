@@ -58,18 +58,33 @@ missing/invalid dates on Master and reopen the review, or uncheck those entries.
 Search narrows the display only; Select all and Clear all apply to the full list.
 The selection count includes checked entries hidden by search.
 
-Click **Archive and Open PowerSchool Tabs** to save the checked entries into
-ECC Contact History, newest date first, and open one PowerSchool tab per entry.
-A conversation and attempt for the same student create two history entries and
-two tabs. The notes and dates remain on Master. Review and submit each log in
+Close all other PowerSchool student tabs, confirm this in the dialog, then click
+**Archive and Start Logging**. This saves the checked entries into ECC Contact
+History, newest date first, and opens only the first PowerSchool entry. A
+conversation and attempt for the same student remain two separate queue items.
+The notes and dates remain on Master. Review and submit each log in
 PowerSchool, then manually delete the source notes when done. Unchanged notes
 are offered and archived again on a new run; there is no duplicate-note filter.
 Individual ECC archive actions also archive repeated notes.
 
-The dialog reserves blank tabs during the button click and sends them to
-PowerSchool only after the archive succeeds. If the browser blocks tabs, use
-**Open remaining tabs** or the individual entry links. Reopening links does not
-archive again. An expired review must be reopened; changes to reviewed notes or
+PowerSchool student selection may be shared between tabs. Keep other student
+pages, including Demographics, closed throughout logging. The dialog reserves
+only one blank tab during the archive click and sends it to PowerSchool only
+after the archive succeeds. If blocked, **Open current entry** retries that same
+queue item. There are no links that open future students in parallel.
+
+For each entry, submit the log in PowerSchool and check the saved log under the
+student name and number shown in the queue. Close that PowerSchool tab, then
+check **I submitted this log and verified it appears under [student]** and click
+**Verified — open next entry**. The next entry cannot open while the current tab
+is still open, or without this confirmation. A closed tab, a redirect, or an
+opened form does not count as a successful submission. These confirmations are
+manual; the roster cannot inspect the PowerSchool server's saved log. If a log
+cannot be found after Submit, leave the queue on that student and investigate
+before retrying or advancing. The final entry uses **Verified — finish logging**.
+
+Retrying a current tab does not archive again. An expired review must be
+reopened; changes to reviewed notes or
 dates cancel the selected batch before saving. Sorts are supported because
 students are matched by Student Number. Script saves share the roster's lock
 and rollback path; direct manual sheet edits are not blocked by that lock.
