@@ -147,6 +147,38 @@ test('recognizes the grade formats used by Master', () => {
   }
 });
 
+test('chronic-absence lists and notes omit activity dates but retain attendance and lesson counts', () => {
+  const student = {name: 'Test Student', first: 'Test', last: 'Student', grade: '12', label: 'T Student, 123'};
+  const headers = ['CURRENT_ACTIVE_STUDENT', 'PAR_CHRONICALLY_ABSENT',
+    'MATH_PASSING_FLAG', 'ELA_PASSING_FLAG', 'DAYS_NEEDED_TO_BECOME_COMPLIANT',
+    'PAR_ATTENDANCE_PCT', 'PRESENT_DAYS', 'ENROLLED_DAYS', 'TOTAL_ABSENT_DAYS',
+    'DAR_TOTAL_LESSONS_ATTEMPTED_LAST_5_DAYS', 'NC1_MOST_RECENT', 'GE_NEXT_CALL_DUE'];
+  const columns = new Map(headers.map((header, i) => [header, i]));
+  // Reading the removed source field would fail, rather than silently returning a blank date.
+  const getColumn = columns.get.bind(columns);
+  columns.get = header => {
+    assert.notEqual(header, 'DAR_MOST_RECENT_ACTIVITY_DATE');
+    return getColumn(header);
+  };
+  for (const [needs, lessons] of [[4, 5], [0, 0], ['', '']]) {
+    const data = {
+      u: {columns},
+      upstream: new Map([['123', ['Yes', 'Yes', 'Yes', 'Yes', needs, 80, 40, 50, 10, lessons, '10/16/2026', '11/2/2026']]]),
+      tz: 'America/Los_Angeles',
+    };
+    const report = WIG.calculate(new Map([['123', student]]), data, '2026-11-03', 10);
+    assert.equal(report.values[1], 1);
+    assert.equal(report.values[2], 'T Student, 123' + (needs === '' ? '' : ' needs ' + needs));
+    assert.doesNotMatch(report.values[2] + '\n' + report.chronicNote, /\bactive\b|last activity/i);
+    assert.match(report.chronicNote, /Attendance 80% \(40 of 50 days\)/);
+    assert.match(report.chronicNote, /Absent 10/);
+    assert.match(report.chronicNote, /NC1 letter 10\/16/);
+    assert.match(report.chronicNote, /GE connection \?; next call due 11\/2/);
+    if (lessons === '') assert.doesNotMatch(report.chronicNote, /Lessons attempted/);
+    else assert.match(report.chronicNote, new RegExp('Lessons attempted last 5 days: ' + lessons));
+  }
+});
+
 test('Failing CTE lists only 10th-grade students', () => {
   const students = new Map([
     ['10', {name: 'Ten Student', first: 'Ten', last: 'Student', grade: '10th Grade', label: 'T Student, 10'}],

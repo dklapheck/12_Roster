@@ -111,6 +111,14 @@ one matching dated row and preserves a week that already contains snapshot
 data or formulas, including when a Monday snapshot is run again on Tuesday.
 Missing rows are reported rather than added automatically.
 
+The **List of Students Chronically Absent** shows each student's name, number,
+and days needed to become compliant. Last-activity dates are omitted from both
+the list and its attendance note; lesson-attempt counts remain in the note.
+Sync `WigSnapshots.gs` to apply this to future previews and snapshots. Existing
+snapshots are not rewritten by Save. After syncing, preview an empty week and
+check that the list and attendance note omit activity dates while retaining
+days needed and available lesson-attempt counts.
+
 GitHub changes do not deploy automatically. Compare the two changed `.gs`
 files with the bound Apps Script project before uploading them, retaining any
 live-only edits. This update does not change PowerSchool settings or its URL

@@ -1,11 +1,11 @@
-/** 12RosterORN WIG snapshots v2.1.
+/** 12RosterORN WIG snapshots v2.2.
  * v1.6: Failing Math / English / CTE come from CourseGrades, one row per course.
  * Credit-recovery courses (HS_COURSE_OFFERINGS_IS_CR_COURSE = Yes) are not counted.
  * Each failing line ends with the grade: "J Garcia, 11304174 — 37%"; CTE lines name
  * the course first: "A Aguirre, 9487734 — CS CAR017A Bus Marketing Expl CA 45%".
  * Snapshots no longer add a cell note.
- * v1.7: chronic-absence lines end with days needed and last activity:
- * "J Garcia, 11304174 — needs 4, active 10/5". The List of Students Chronically
+ * v1.7: chronic-absence lines include days needed:
+ * "J Garcia, 11304174 needs 4". The List of Students Chronically
  * Absent cell gets a note with each student's full attendance details.
  * v1.8: no dash before the details ("J Garcia, 11304174 59%"), and CTE course
  * titles are shortened ("CAR015A Arts, AV, Comm, Principles" -> "Arts AV Comm").
@@ -15,6 +15,7 @@
  * CourseGrades, skipping credit-recovery courses.
  * v2.0: Failing CTE includes only 10th-grade students.
  * v2.1: Tuesday-labeled weeks are available starting the preceding Monday.
+ * v2.2: Last-activity dates are omitted from chronic-absence lists and notes.
  * @NotOnlyCurrentDoc
  * Requires Config.gs. Menus are built by Menus.gs.
  * v1.2: Failing Math / English / CTE cells hold the count, then one student per
@@ -94,8 +95,7 @@ const WIG_SNAPSHOTS = (() => {
   /** Chronic-absence line detail and full note for one student. get(header) reads Upstream. */
   function attendance(student, get, tz) {
     const needs = num(get('DAYS_NEEDED_TO_BECOME_COMPLIANT'));
-    const active = shortDate(get('DAR_MOST_RECENT_ACTIVITY_DATE'), tz);
-    const detail = [needs === null ? '' : 'needs ' + needs, active ? 'active ' + active : ''].filter(Boolean).join(', ');
+    const detail = needs === null ? '' : 'needs ' + needs;
     const pct = num(get('PAR_ATTENDANCE_PCT')), present = num(get('PRESENT_DAYS')), enrolled = num(get('ENROLLED_DAYS'));
     const absent = num(get('TOTAL_ABSENT_DAYS')) ?? num(get('ABSENT_DAYS')), excused = num(get('EXCUSED_DAYS'));
     const last5 = num(get('MISSING_LAST_5_SCHOOL_DAYS')), prev5 = num(get('MISSING_5_TO_10_SCHOOL_DAYS_AGO'));
@@ -106,7 +106,7 @@ const WIG_SNAPSHOTS = (() => {
     if (last5 !== null || prev5 !== null) lines.push('Missed last 5 days: ' + (last5 ?? '?') + '; 5–10 days ago: ' + (prev5 ?? '?'));
     if (!blank(get('MISSING_ATTENDANCE_DATES'))) lines.push('Missing dates: ' + text(get('MISSING_ATTENDANCE_DATES')));
     if (needs !== null) lines.push('Needs ' + needs + (needs === 1 ? ' day' : ' days') + ' to become compliant');
-    if (active || lessons !== null) lines.push('Last activity ' + (active || '?') + (lessons !== null ? '; lessons attempted last 5 days: ' + lessons : ''));
+    if (lessons !== null) lines.push('Lessons attempted last 5 days: ' + lessons);
     for (const n of ['NC1', 'NC2']) {
       const date = shortDate(get(n + '_MOST_RECENT'), tz), count = num(get(n + '_NUMBEROFLETTERS'));
       if (date || count) lines.push(n + ' letter ' + (date || '?') + (count ? ' (' + count + ' sent)' : ''));
