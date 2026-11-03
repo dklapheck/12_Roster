@@ -16,6 +16,8 @@ function buildMenus_() {
     // Frequently used quick-access actions
     .addItem('Archive and Log All ECC', 'archiveAndLogAllEcc')
     .addItem('Open Student Demographics', 'openStudentDemographics')
+    .addItem('Log selected student\u2019s conversation', 'archiveEccConversationAndOpenPowerSchool')
+    .addItem('Log selected student\u2019s attempt', 'archiveEccAttemptAndOpenPowerSchool')
     .addSeparator()
     .addSubMenu(
       ui.createMenu('ECC & Demographics')

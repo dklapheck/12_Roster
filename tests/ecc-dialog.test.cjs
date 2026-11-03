@@ -15,33 +15,28 @@ class Element {
   emit(event) { this.listeners[event]?.(); }
 }
 function fixture(entries) {
-  const elements = Object.fromEntries(['status', 'summary', 'save', 'review', 'ready', 'queue', 'queueProgress', 'currentStudent', 'openCurrent', 'verified', 'verifyLabel', 'next', 'close', 'results', 'entries', 'search', 'selectAll', 'clearAll']
-    .map(id => [id, new Element()]));
-  ['search', 'selectAll', 'clearAll', 'ready'].forEach(id => {elements[id].className = 'reviewControl';});
+  // Derive IDs from the current HTML so removed controls cannot linger in tests.
+  const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)]
+    .map(([, id]) => [id, new Element()]));
+  ['search', 'selectAll', 'clearAll'].forEach(id => {elements[id].className = 'reviewControl';});
   const descendants = root => [root, ...root.children.filter(c => c instanceof Element).flatMap(descendants)];
   const document = {getElementById: id => elements[id], createElement: tag => new Element(tag), createTextNode: text => text,
     querySelectorAll: () => Object.values(elements).flatMap(descendants).filter(e => e.className === 'reviewControl')};
-  const windows = [], navigations = [], requests = [];
-  let blocked = 0, onSuccess, onFailure, poll, closedDialog = false;
-  const window = {open: () => {
-    if (blocked > 0) {blocked--;return null;}
-    const tab = {closed: false, document: {body: {}}, location: {replace: url => navigations.push(url)}, focus(){},
-      close(){this.closed = true;}};
-    windows.push(tab); return tab;
-  }};
+  const requests = [];
+  let onSuccess, onFailure, closedDialog = false;
+  const window = {open() { assert.fail('PowerSchool tabs must be opened manually.'); }};
   const api = (success, failure) => ({
     withSuccessHandler: callback => api(callback, failure), withFailureHandler: callback => api(success, callback),
     getEccBulkReview: () => success({token: 'review-1', entries}),
     archiveSelectedEcc: (token, ids) => {requests.push({token, ids: [...ids]});onSuccess = success; onFailure = failure;}
   });
-  const ctx = vm.createContext({document, window, setInterval: callback => {poll = callback;},
+  const ctx = vm.createContext({document, window,
     google: {script: {run: api(), host: {close: () => {closedDialog = true;}}}}});
   vm.runInContext(script, ctx);
-  return {ctx, elements, windows, requests, navigations,
+  return {elements, requests,
     boxes: () => descendants(elements.entries).filter(e => e.type === 'checkbox'),
-    block: count => {blocked = count;}, succeed: result => onSuccess(result), fail: message => onFailure({message}),
-    poll: () => poll(), closedDialog: () => closedDialog,
-    start: () => {elements.ready.checked = true; elements.ready.emit('change'); elements.save.emit('click');}};
+    succeed: result => onSuccess(JSON.parse(JSON.stringify(result))), fail: message => onFailure({message}),
+    closedDialog: () => closedDialog, start: () => elements.save.emit('click')};
 }
 const entries = [
   {id: '11|Conversation', label: 'Student One', studentNumber: '11', type: 'Conversation', date: '10/21/2026', oldDate: true, note: '<script>unsafe</script>', error: ''},
@@ -64,102 +59,81 @@ test('dialog checks every entry, search does not alter selection, and older date
   f.elements.selectAll.emit('click'); assert.equal(f.boxes().every(box => box.checked), true);
 });
 
-test('only one tab is reserved and only the first entry navigates after archive; no future links bypass the queue', () => {
+test('archive displays manual links after saving without opening tabs or archiving twice', () => {
   const f = fixture(entries); f.start();
   assert.deepEqual(f.requests, [{token: 'review-1', ids: entries.map(e => e.id)}]);
-  assert.equal(f.windows.length, 1); assert.equal(f.navigations.length, 0);
-  assert.equal(f.windows.every(tab => tab.opener === null), true);
+  assert.equal(f.elements.results.children.length, 0);
   assert.equal(f.elements.close.disabled, true);
+  assert.equal(f.elements.save.disabled, true);
+  f.start(); assert.equal(f.requests.length, 1);
   f.succeed(result);
-  assert.deepEqual(f.navigations, [result.links[0].url]);
-  assert.equal(f.elements.queue.hidden, false);
-  assert.match(f.elements.currentStudent.textContent, /Student One — 11 — Conversation/);
-  assert.equal(f.elements.next.disabled, true);
-  assert.equal(f.requests.length, 1);
+  assert.equal(f.elements.review.hidden, true);
+  assert.equal(f.elements.links.hidden, false);
+  assert.equal(f.elements.save.hidden, true);
   assert.equal(f.elements.results.children.length, 3);
-  assert.equal(f.elements.results.children.every(p => p.children.every(c => c.tag !== 'a')), true);
-  f.elements.save.emit('click'); assert.equal(f.requests.length, 1);
+  f.elements.results.children.forEach((li, i) => {
+    const a = li.children[0];
+    assert.equal(a.tag, 'a');
+    assert.equal(a.href, result.links[i].url);
+    assert.equal(a.target, '_blank');
+    assert.equal(a.rel, 'noopener noreferrer');
+    assert.equal(a.textContent, entries[i].label + ' — ' + entries[i].studentNumber + ' — ' + entries[i].type + ' — ' + entries[i].date);
+  });
+  f.start(); assert.equal(f.requests.length, 1);
 });
 
-test('archive failure closes placeholders and allows an explicit retry without claiming entries were saved', () => {
+test('archive failure permits an explicit retry and shows no links or success claim', () => {
   const f = fixture(entries); f.start(); f.fail('Notes changed; reopen review.');
-  assert.equal(f.windows.every(tab => tab.closed), true);
-  assert.equal(f.navigations.length, 0);
+  assert.equal(f.elements.results.children.length, 0);
   assert.equal(f.elements.save.disabled, false);
   assert.equal(f.elements.status.textContent, 'Notes changed; reopen review.');
   assert.equal(f.elements.close.disabled, false);
+  assert.equal(f.boxes().every(box => !box.disabled), true);
+  f.start(); assert.equal(f.requests.length, 2);
 });
 
 test('invalid dates can be unchecked and only the remaining checked entries are archived', () => {
   const f = fixture([{...entries[0], error: 'Enter a valid date in ECC Date.'}, entries[1]]);
   f.start();
-  assert.equal(f.requests.length, 0); assert.equal(f.windows.length, 0);
+  assert.equal(f.requests.length, 0);
   f.boxes()[0].checked = false; f.boxes()[0].emit('change'); f.elements.save.emit('click');
   assert.deepEqual(f.requests[0].ids, ['11|Attempt']);
 });
 
-test('starting requires closing other PowerSchool student tabs confirmation', () => {
-  const f = fixture(entries);
-  assert.equal(f.elements.save.disabled, true);
-  f.elements.save.emit('click');
-  assert.equal(f.requests.length, 0); assert.equal(f.windows.length, 0);
-  assert.match(f.elements.status.textContent, /Close all other PowerSchool/);
+test('dialog instructs users to submit and close each student tab before the next link', () => {
+  assert.match(html, /Open one student at a time\. Submit the log, close that PowerSchool tab, then click the next link\./);
 });
 
-test('neither a click, an elapsed interval, nor closing a tab counts as a saved log', () => {
+test('link clicks count openings once without claiming submission or verification', () => {
   const f = fixture(entries); f.start(); f.succeed(result);
-  f.elements.next.emit('click'); f.poll();
-  assert.equal(f.windows.length, 1);
-  f.windows[0].close(); f.poll();
-  assert.equal(f.elements.next.disabled, true);
-  f.elements.next.emit('click');
-  assert.equal(f.navigations.length, 1);
-  assert.match(f.elements.queueProgress.textContent, /^0 of 3 logs confirmed/);
-});
-
-test('manual verification cannot advance while the current student tab is open; each next requires a fresh confirmation', () => {
-  const f = fixture(entries); f.start(); f.succeed(result);
-  f.elements.verified.checked = true; f.elements.verified.emit('change');
-  assert.equal(f.elements.next.disabled, true);
-  f.elements.next.emit('click'); assert.equal(f.navigations.length, 1);
-  f.windows[0].close(); f.poll();
-  assert.equal(f.elements.next.disabled, false);
-  f.elements.next.emit('click');
-  assert.equal(f.navigations.length, 2); assert.equal(f.navigations[1], result.links[1].url);
-  assert.match(f.elements.currentStudent.textContent, /Student One — 11 — Attempt/);
-  assert.equal(f.elements.verified.checked, false);
-  assert.equal(f.elements.next.disabled, true);
-  f.elements.next.emit('click'); assert.equal(f.windows.length, 2);
-});
-
-test('blocked tab retries open only the current queue item and do not archive or advance', () => {
-  const f = fixture(entries); f.block(1); f.start(); f.succeed(result);
-  assert.equal(f.windows.length, 0); assert.equal(f.elements.verified.disabled, true);
-  f.elements.next.emit('click'); assert.equal(f.windows.length, 0);
-  f.elements.openCurrent.emit('click');
-  assert.deepEqual(f.navigations, [result.links[0].url]);
-  f.elements.openCurrent.emit('click');
-  assert.equal(f.windows.length, 1); assert.equal(f.requests.length, 1);
-});
-
-test('finishing confirms each entry separately and never opens an extra student', () => {
-  const f = fixture(entries); f.start(); f.succeed(result);
-  for (let i = 0; i < entries.length; i++) {
-    f.windows[i].close(); f.elements.verified.checked = true; f.elements.verified.emit('change');
-    f.elements.next.emit('click');
-  }
-  assert.deepEqual(f.navigations, result.links.map(link => link.url));
-  assert.match(f.elements.status.textContent, /3 entries archived and confirmed by you/);
-  assert.equal(f.elements.openCurrent.disabled, true);
-  assert.equal(f.elements.next.disabled, true);
+  assert.match(f.elements.status.textContent, /3 entries archived\. 0 of 3 links opened\./);
+  const li = f.elements.results.children[0], a = li.children[0];
+  a.emit('click'); a.emit('click');
+  assert.equal(li.className, 'opened');
+  assert.equal(li.children.length, 2);
+  assert.equal(li.children[1].textContent, '✓ opened');
+  assert.match(f.elements.status.textContent, /1 of 3 links opened/);
+  assert.doesNotMatch(f.elements.status.textContent, /submitted|confirmed|verified/);
+  for (const row of f.elements.results.children.slice(1)) row.children[0].emit('click');
+  assert.match(f.elements.status.textContent, /3 of 3 links opened/);
   assert.equal(f.requests.length, 1);
 });
 
-test('closing the queue does not leave its PowerSchool student tab active', () => {
-  const f = fixture(entries); f.start(); f.succeed(result);
-  f.elements.close.emit('click'); assert.equal(f.closedDialog(), false);
-  f.windows[0].close(); f.elements.close.emit('click');
-  assert.equal(f.closedDialog(), true);
+test('student labels and near-limit warnings render as text in the link list', () => {
+  const f = fixture(entries); f.start();
+  f.succeed({links: [{...result.links[0], label: '<script>unsafe</script>', nearLimit: true}]});
+  const li = f.elements.results.children[0];
+  assert.match(li.children[0].textContent, /^<script>unsafe<\/script>/);
+  assert.match(li.children[1], /History is close to the cell size limit/);
+});
+
+test('dialog cannot close while archiving but can close after success or failure', () => {
+  for (const success of [true, false]) {
+    const f = fixture(entries); f.start(); f.elements.close.emit('click');
+    assert.equal(f.closedDialog(), false);
+    if (success) f.succeed(result); else f.fail('Try again');
+    f.elements.close.emit('click'); assert.equal(f.closedDialog(), true);
+  }
 });
 
 test('empty review cannot archive and displays a useful result', () => {

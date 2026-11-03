@@ -1,4 +1,4 @@
-/** 12RosterORN WIG snapshots v2.0.
+/** 12RosterORN WIG snapshots v2.1.
  * v1.6: Failing Math / English / CTE come from CourseGrades, one row per course.
  * Credit-recovery courses (HS_COURSE_OFFERINGS_IS_CR_COURSE = Yes) are not counted.
  * Each failing line ends with the grade: "J Garcia, 11304174 — 37%"; CTE lines name
@@ -14,6 +14,7 @@
  * (0 = failing) and show MATH_GRADE / ELA_GRADE. Failing CTE still comes from
  * CourseGrades, skipping credit-recovery courses.
  * v2.0: Failing CTE includes only 10th-grade students.
+ * v2.1: Tuesday-labeled weeks are available starting the preceding Monday.
  * @NotOnlyCurrentDoc
  * Requires Config.gs. Menus are built by Menus.gs.
  * v1.2: Failing Math / English / CTE cells hold the count, then one student per
@@ -27,7 +28,7 @@
  * Master defines roster membership/names. Info!A2 points to the imports workbook.
  * Reads Upstream and CourseGrades directly. No Dash, StudentData, Config or Helpers.
  * Saves available metrics and lists missing students/data in column L.
- * Snapshots are taken only from the WIG Tools menu (the automatic Tuesday
+ * Snapshots are taken only from Update > WIG (the automatic Tuesday
  * schedule was removed).
  */
 const WIG_SNAPSHOTS = (() => {
@@ -152,8 +153,9 @@ const WIG_SNAPSHOTS = (() => {
   function weekKey(now, tz) {
     const parts = Utilities.formatDate(now, tz, 'yyyy-MM-dd').split('-').map(Number);
     const day = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-    day.setUTCDate(day.getUTCDate() - (day.getUTCDay() - 2 + 7) % 7);
-    return day.toISOString().slice(0, 10); // Most recent Tuesday in spreadsheet timezone.
+    // Weeks open Monday, but keep the existing Tuesday dates in WIG column A.
+    day.setUTCDate(day.getUTCDate() - (day.getUTCDay() - 1 + 7) % 7 + 1);
+    return day.toISOString().slice(0, 10); // Tuesday of the Monday–Sunday week in spreadsheet timezone.
   }
   function dateKey(value, tz) {
     if (value instanceof Date && !isNaN(value.getTime())) return Utilities.formatDate(value, tz, 'yyyy-MM-dd');
