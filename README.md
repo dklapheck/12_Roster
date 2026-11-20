@@ -112,13 +112,23 @@ subtype's template text. With PowerSchool Helper 3.7.1 or later, its status
 button says "5+ Attempts", and when Log Type and Subtype are blank it shows the
 values you chose with Copy buttons, so you can paste them into this row.
 
-The script owns the fill color of the ECC Contact History column. Colors update
-after every archive; after editing a history cell by hand, run **Update →
-Maintenance → Refresh 5+ attempt colors**.
+**Colors and the Attempt Streak column.** The script fills a Master column
+headed **Attempt Streak** (added at the right end the first time colors are
+refreshed, if it is missing): `Due: 6 attempts`, `Logged 11/20/2026`,
+`3 attempts`, or blank. Two conditional formatting rules color ECC Contact
+History and Attempt Streak from that column: red for `Due:`, yellow for
+`Logged`. The script puts them first, so they show over other rules such as
+an every-other-row grey; your other rules are kept in their order. Because the
+rules read the row's own value, the colors stay with the student when you sort.
+Don't type in Attempt Streak or put a formula there; the script rewrites it.
+It updates after every archive; after editing a history cell by hand, run
+**Update → Maintenance → Refresh 5+ attempt colors**.
 
 Install: add `AttemptStreak.gs`, update `LogECC.gs`, `EccBulk.gs`,
 `EccBulkDialog.html` and `Menus.gs`, run `installRosterTools` (it checks the
 5+ Attempts row), reload the sheet, then run **Refresh 5+ attempt colors** once.
+Updating from the first version only needs the new `AttemptStreak.gs`; the
+first refresh adds Attempt Streak and clears the old red/yellow cell fills.
 
 ## Archive and log ECC conversations and attempts
 

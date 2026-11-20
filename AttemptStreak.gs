@@ -1,4 +1,4 @@
-/** 5+ Attempt Log v1.0 for 12RosterORN. Requires Config.gs, MasterSave.gs and LogECC.gs.
+/** 5+ Attempt Log v1.1 for 12RosterORN. Requires Config.gs, MasterSave.gs and LogECC.gs.
  *
  * A streak is every [Attempt] entry in ECC Contact History since the last
  * successful contact ([Conversation], [Parent Contact], or an older
@@ -12,10 +12,16 @@
  * It never counts as an attempt and is never offered again in the same streak.
  * Only a successful contact starts a new streak.
  *
- * ECC Contact History cell colors (this script owns that column's fill):
- *   red    - 5+ attempts in the streak, not logged yet
- *   yellow - the streak has a 5+ Attempt Log (more attempts keep it yellow)
- *   none   - otherwise
+ * v1.1: colors are conditional formatting rules, placed first so they show
+ * over other rules such as an every-other-row grey. They read the Attempt
+ * Streak column on Master, which this script fills in (and adds once, at the
+ * right end, if it is missing). Values move with the row when you sort:
+ *   "Due: 6 attempts"    - 5+ attempts, not logged yet -> red
+ *   "Logged 11/20/2026"  - the streak has a 5+ Attempt Log -> yellow
+ *   "3 attempts"         - fewer than 5 -> no color
+ *   blank                - no attempts since the last successful contact
+ * The same rules color ECC Contact History and Attempt Streak. Refresh after
+ * editing a history cell by hand (Update > Maintenance > Refresh 5+ attempt colors).
  */
 const ATTEMPT_STREAK = (() => {
   const LIMIT = 5, TYPE = '5+ Attempt Log';
@@ -93,29 +99,93 @@ const ATTEMPT_STREAK = (() => {
   }
 
   // ---- colors -------------------------------------------------------------
-  /** Recolors every ECC Contact History cell on Master. Writes fills only. */
+  const COLUMN = 'Attempt Streak';
+  const CF_MARK = 'N("HR10STREAK")=0';   // always TRUE; identifies this script's rules
+
+  /** The Attempt Streak text for one history cell. */
+  function label(state) {
+    if (state.logged) return 'Logged ' + state.logDate;
+    if (state.due) return 'Due: ' + state.count + ' attempts';
+    return state.count ? state.count + ' attempt' + (state.count === 1 ? '' : 's') : '';
+  }
+
+  /** Adds the Attempt Streak header after the last column if Master lacks it. */
+  function ensureColumn(sheet) {
+    const found = CONFIG.headerColumns(sheet).columns.get(COLUMN);
+    if (found) return {column: found, added: false};
+    const last = sheet.getLastColumn();
+    if (sheet.getMaxColumns() <= last) sheet.insertColumnAfter(last);
+    sheet.getRange(1, last + 1).setValue(COLUMN);
+    CONFIG.log('INFO', 'Setup', '', 'Added the Master column ' + COLUMN + '.');
+    return {column: last + 1, added: true};
+  }
+
+  function ours(rule) {
+    const condition = rule.getBooleanCondition && rule.getBooleanCondition();
+    if (!condition || condition.getCriteriaType() !== SpreadsheetApp.BooleanCriteria.CUSTOM_FORMULA) return false;
+    return String(condition.getCriteriaValues()[0] || '').replace(/\s+/g, '').indexOf('N("HR10STREAK")') >= 0;
+  }
+  /** Rule formulas, relative to row 2 of the Attempt Streak column. */
+  function formulas(letter) {
+    const cell = '$' + letter + '2';
+    return [
+      {formula: '=AND(' + CF_MARK + ',LEFT(' + cell + ',4)="Due:")', background: RED},
+      {formula: '=AND(' + CF_MARK + ',LEFT(' + cell + ',7)="Logged ")', background: YELLOW}
+    ];
+  }
+  /** Puts this script's rules first; every other rule is kept in its order. */
+  function applyRules(sheet, historyColumn, statusColumn) {
+    const height = Math.max(sheet.getMaxRows() - 1, 1);
+    const ranges = [sheet.getRange(2, historyColumn, height, 1), sheet.getRange(2, statusColumn, height, 1)];
+    const all = sheet.getConditionalFormatRules();
+    const kept = all.filter(rule => !ours(rule));
+    const fresh = formulas(CONFIG.columnLetter(statusColumn)).map(x => SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(x.formula).setBackground(x.background).setRanges(ranges).build());
+    sheet.setConditionalFormatRules(fresh.concat(kept));
+  }
+
+  /** v1.0 filled ECC Contact History directly; clear only those two fills. */
+  function clearOldFills(range) {
+    const old = [RED, YELLOW].map(c => c.toLowerCase());
+    const fills = range.getBackgrounds();
+    if (!fills.some(row => old.includes(String(row[0]).toLowerCase()))) return;
+    range.setBackgrounds(fills.map(row => [old.includes(String(row[0]).toLowerCase()) ? null : row[0]]));
+  }
+
+  /** Fills Attempt Streak for every student and reapplies the color rules. */
   function recolor(quiet) {
     const ss = CONFIG.workbook();
     const result = CONFIG.withLock(() => {
+      const sheet = ss.getSheetByName(CONFIG.MASTER);
+      if (!sheet) throw new Error('The Master tab is missing.');
+      const added = ensureColumn(sheet).added;
       const master = MASTER_SAVE.readMaster(ss);
-      const column = master.columns.get(ECC_LOG.FIELDS.history);
-      if (!column) throw new Error('Missing LogECC header: ' + ECC_LOG.FIELDS.history);
-      const height = master.lastRow - 1;
-      if (height < 1) return {red: 0, yellow: 0};
-      const range = master.sheet.getRange(2, column, height, 1);
+      const history = master.columns.get(ECC_LOG.FIELDS.history), statusColumn = master.columns.get(COLUMN);
+      if (!history) throw new Error('Missing LogECC header: ' + ECC_LOG.FIELDS.history);
       let red = 0, yellow = 0;
-      const fills = range.getValues().map((row, i) => {
-        if (!master.rowKeys.has(i + 2)) return [null];
-        const color = status(row[0]).color;
-        if (color === 'red') { red++; return [RED]; }
-        if (color === 'yellow') { yellow++; return [YELLOW]; }
-        return [null];
-      });
-      range.setBackgrounds(fills);
-      return {red, yellow};
+      const height = master.lastRow - 1;
+      if (height >= 1) {
+        const target = sheet.getRange(2, statusColumn, height, 1);
+        if (target.getFormulas().some(row => row[0])) {
+          throw new Error('Attempt Streak on Master must not contain formulas; the script fills it in.');
+        }
+        const current = target.getValues();
+        const values = sheet.getRange(2, history, height, 1).getValues().map((row, i) => {
+          if (!master.rowKeys.has(i + 2)) return [current[i][0]];
+          const state = status(row[0]);
+          if (state.color === 'red') red++;
+          if (state.color === 'yellow') yellow++;
+          return [label(state)];
+        });
+        if (JSON.stringify(values) !== JSON.stringify(current)) target.setValues(values);
+        clearOldFills(sheet.getRange(2, history, height, 1));
+      }
+      applyRules(sheet, history, statusColumn);
+      return {red, yellow, added};
     }, 'Roster tools are busy. Please retry.');
     if (!quiet) ss.toast(result.red + ' red (5+ attempts, not logged) · ' + result.yellow +
-      ' yellow (logged this streak).', '5+ attempt colors', 8);
+      ' yellow (logged this streak).' + (result.added ? ' Added the Attempt Streak column on Master.' : ''),
+      '5+ attempt colors', 8);
     return result;
   }
   /** Used after archives: a color problem never undoes a saved archive. */
@@ -124,8 +194,8 @@ const ATTEMPT_STREAK = (() => {
     catch (error) { CONFIG.log('ERROR', '5+ Attempt Colors', '', error.message, CONFIG.errorDetails(error)); return null; }
   }
 
-  return Object.freeze({entries, status, summary, notDueReason, methodOf, recolor, recolorQuietly,
-    LIMIT, TYPE, RED, YELLOW});
+  return Object.freeze({entries, status, summary, notDueReason, methodOf, label, formulas, ours,
+    recolor, recolorQuietly, LIMIT, TYPE, RED, YELLOW, COLUMN});
 })();
 
 function refreshFiveAttemptColors() { return ATTEMPT_STREAK.recolor(false); }

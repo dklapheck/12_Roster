@@ -34,13 +34,24 @@ function fixture(headers = [...HEADERS]) {
   ];
   const fills = [];
   const formulas = cells.map(row => row.map(() => ''));
+  // v1.0 left a red fill on ECC Contact History; v1.1 clears only that fill.
+  const backgrounds = cells.map(() => ['#ffffff']);
+  backgrounds[1][0] = '#ea9999';
+  const condition = formula => ({getCriteriaType: () => 'CUSTOM_FORMULA', getCriteriaValues: () => [formula]});
+  // The teacher's every-other-row grey rule over the whole table.
+  let rules = [{getBooleanCondition: () => condition('=ISEVEN(ROW())'), formula: '=ISEVEN(ROW())', background: '#EEEEEE'}];
   const writes = [], cache = new Map(), logs = [], dialogs = [];
   let uuid = 0, writeCalls = 0, failAt = 0;
   const range = (r, c, height = 1, width = 1) => ({
     getValues: () => r === 1 ? [headers.slice(c - 1, c - 1 + width)] :
       cells.slice(r - 2, r - 2 + height).map(row => row.slice(c - 1, c - 1 + width)),
+    getNumRows: () => height,
     getFormulas: () => formulas.slice(r - 2, r - 2 + height).map(row => row.slice(c - 1, c - 1 + width)),
-    setBackgrounds: values => { fills.push({r, c, values: plain(values)}); },
+    getBackgrounds: () => backgrounds.slice(r - 2, r - 2 + height).map(row => [...row]),
+    setBackgrounds: values => {
+      fills.push({r, c, values: plain(values)});
+      values.forEach((row, i) => { backgrounds[r - 2 + i][0] = row[0] || '#ffffff'; });
+    },
     getNumberFormats: () => Array.from({length: height}, () => Array(width).fill('@')),
     setValue: value => { if (r === 1) headers[c - 1] = value; else cells[r - 2][c - 1] = value; },
     setValues: values => {
@@ -50,7 +61,14 @@ function fixture(headers = [...HEADERS]) {
     }
   });
   const sheet = {getName: () => 'Master', getLastColumn: () => headers.length,
-    getLastRow: () => cells.length + 1, getRange: range};
+    getLastRow: () => cells.length + 1, getRange: range,
+    getMaxColumns: () => headers.length, getMaxRows: () => 100,
+    insertColumnAfter: column => {
+      headers.splice(column, 0, '');
+      cells.forEach(row => row.splice(column, 0, ''));
+      formulas.forEach(row => row.splice(column, 0, ''));
+    },
+    getConditionalFormatRules: () => [...rules], setConditionalFormatRules: list => { rules = [...list]; }};
   const settingsGrid = [
     ['Workflow', 'Opening Log Text', 'Log Type value', 'Subtype value', 'Log date field', 'Tag label'],
     ['ECC Conversation', 'Conversation opening', 'contact', 'success', 'log_date', 'ECC'],
@@ -72,6 +90,17 @@ function fixture(headers = [...HEADERS]) {
     CacheService: {getUserCache: () => ({get: key => cache.get(key), put: (key, value) => cache.set(key, value)})},
     LockService: {getDocumentLock: () => ({tryLock: () => true, releaseLock: () => {}})},
     SpreadsheetApp: {getActiveSpreadsheet: () => ss, flush: () => {},
+      BooleanCriteria: {CUSTOM_FORMULA: 'CUSTOM_FORMULA'},
+      newConditionalFormatRule: () => {
+        const rule = {};
+        const builder = {
+          whenFormulaSatisfied(formula) { rule.formula = formula; return builder; },
+          setBackground(color) { rule.background = color; return builder; },
+          setRanges(ranges) { rule.ranges = ranges; return builder; },
+          build: () => Object.assign(rule, {getBooleanCondition: () => condition(rule.formula)})
+        };
+        return builder;
+      },
       getActiveRange: () => ({getSheet: () => sheet, getRow: () => 2, getNumRows: () => 1}),
       getUi: () => ({showModalDialog: (output, title) => dialogs.push({output, title})})},
     HtmlService: {createHtmlOutputFromFile: file => ({file, setWidth(){return this;}, setHeight(){return this;}}),
@@ -86,7 +115,19 @@ function fixture(headers = [...HEADERS]) {
   const decode = link => JSON.parse(Buffer.from(link.url.split(/#(?:ecc|parent)=/)[1], 'base64url'));
   const all = review => plain(review.entries.map(entry => entry.id));
   const streak = vm.runInContext('ATTEMPT_STREAK', ctx);
-  return {fills, streak, ctx, headers, cells, formulas, writes, cache, logs, dialogs, settingsGrid, ss, sheet, bulk, ecc, set, get, decode, all,
+  const status = row => cells[row][headers.indexOf('Attempt Streak')];
+  // The fill a teacher sees on a Master row: the first matching rule wins.
+  const shown = row => {
+    const values = Object.fromEntries(headers.map((h, i) => [h, cells[row][i]]));
+    for (const rule of rules) {
+      if (rule.formula === '=ISEVEN(ROW())') { if ((row + 2) % 2 === 0) return rule.background; continue; }
+      const m = rule.formula.match(/LEFT\(\$([A-Z]+)2,(\d+)\)="([^"]*)"/);
+      const column = headers[m[1].charCodeAt(0) - 65];
+      if (String(values[column]).slice(0, Number(m[2])) === m[3]) return rule.background;
+    }
+    return '#ffffff';
+  };
+  return {fills, backgrounds, status, shown, get rules() { return rules; }, streak, ctx, headers, cells, formulas, writes, cache, logs, dialogs, settingsGrid, ss, sheet, bulk, ecc, set, get, decode, all,
     failWrite: n => {failAt = writeCalls + n;}};
 }
 
@@ -140,9 +181,11 @@ test('bulk review offers one checked 5+ Attempt Log only to due students; archiv
   assert.equal(payload.outcome, '5+ Attempts'); assert.equal(payload.settings.subtypeValue, 'five');
   assert.equal(payload.date, '10/23/2026');
   assert.match(payload.note, /^5 unsuccessful .* 10\/1\/2026: \| 10\/14 text message; .* \| No response received\.$/);
-  f.cells.forEach((row, i) => assert.deepEqual(plain(row.filter((_, c) => HEADERS[c] !== 'ECC Contact History')),
+  // Only ECC Contact History and the script's Attempt Streak column change.
+  f.cells.forEach((row, i) => assert.deepEqual(plain(row.slice(0, HEADERS.length).filter((_, c) => HEADERS[c] !== 'ECC Contact History')),
     before[i].filter((_, c) => HEADERS[c] !== 'ECC Contact History')));
-  assert.deepEqual(f.fills.at(-1).values, [['#FFE599'], [null], [null]]);
+  assert.equal(f.status(0), 'Logged 10/23/2026');
+  assert.equal(f.shown(0), '#FFE599', 'yellow shows over the grey row rule');
   assert.equal(f.bulk.review().entries.some(e => e.type === FIVE), false, 'never offered twice in a streak');
   // Lost response: the same dialog gets the same links back without saving again.
   const writes = f.writes.length;
@@ -180,12 +223,33 @@ test('individual log: refuses students who are not due, logs a due student, and 
   assert.match(f.get(0, 'ECC Contact History'), /^-- 10\/23\/2026 \[5\+ Attempt Log\]\n5 unsuccessful/);
   assert.equal(f.dialogs.length, 1);
   assert.match(f.dialogs[0].output.html, /#parent=/);
-  assert.deepEqual(f.fills.at(-1).values, [['#FFE599'], [null], [null]]);
+  assert.equal(f.status(0), 'Logged 10/23/2026');
   assert.throws(() => f.ctx.archiveFiveAttemptLogAndOpenPowerSchool(), /already has a 5\+ Attempt Log \(10\/23\/2026\)/);
 });
 
-test('Refresh 5+ attempt colors marks due students red and leaves other rows blank', () => {
+test('Refresh adds Attempt Streak once, fills it, and its rules show over an every-other-row grey rule', () => {
   const f = fixture();
-  assert.deepEqual(plain(f.streak.recolor(true)), {red: 1, yellow: 0});
-  assert.deepEqual(f.fills.at(-1).values, [['#EA9999'], [null], [null]]);
+  assert.deepEqual(plain(f.streak.recolor(true)), {red: 1, yellow: 0, added: true});
+  assert.equal(f.headers.at(-1), 'Attempt Streak');
+  assert.deepEqual([0, 1, 2].map(f.status), ['Due: 5 attempts', '4 attempts', '']);
+  // Row 2 (student 11) is an even row, so the grey rule also matches it.
+  assert.deepEqual([0, 1, 2].map(f.shown), ['#EA9999', '#ffffff', '#EEEEEE']);
+  assert.equal(f.rules.length, 3);
+  assert.equal(f.rules.at(-1).formula, '=ISEVEN(ROW())', 'the grey rule is kept, after ours');
+  assert.deepEqual(plain(f.rules[0].ranges.map(r => r.getNumRows())), [99, 99], 'whole columns, so new students are covered');
+  assert.equal(f.backgrounds[1][0], '#ffffff', 'the old v1.0 red fill is cleared');
+  // Running again replaces our rules instead of adding more, and adds no column.
+  const width = f.headers.length;
+  assert.equal(f.streak.recolor(true).added, false);
+  assert.equal(f.headers.length, width); assert.equal(f.rules.length, 3);
+  // Values move with the row when Master is sorted; the rules follow them.
+  f.cells.reverse(); f.formulas.reverse();
+  assert.deepEqual([0, 1, 2].map(f.shown), ['#EEEEEE', '#ffffff', '#EA9999']);
+});
+
+test('Attempt Streak with a formula stops the refresh with an explanation', () => {
+  const f = fixture();
+  f.streak.recolor(true);
+  f.formulas[0][f.headers.indexOf('Attempt Streak')] = '=1';
+  assert.throws(() => f.streak.recolor(true), /must not contain formulas/);
 });
