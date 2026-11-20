@@ -136,7 +136,8 @@ const ECC_BULK = (() => {
           const type = record.type, key = record.studentNumber;
           let entry = record.entry;
           if (type === FIVE && histories.has(key)) {
-            try { entry = ECC_LOG.readEntry({get: () => histories.get(key)}, type, ss); }
+            const reader = {get: header => header === F.history ? histories.get(key) : record.reader.get(header)};
+            try { entry = ECC_LOG.readEntry(reader, type, ss); }
             catch (error) { throw new Error(record.label + ': uncheck the 5+ Attempt Log. ' + error.message); }
           }
           const info = ECC_LOG.typeInfo(type);

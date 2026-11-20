@@ -92,10 +92,23 @@ used: the script writes the entry from the history and dates it today:
 
 ```
 -- 11/20/2026 [5+ Attempt Log]
-6 unsuccessful student/parent contact attempts in a row since the last successful contact on 11/4/2026:
-11/4 ParentSquare message; 11/5 email; 11/12 email; 11/12 absent from live class; 11/18 phone call/voicemail; 11/19 email.
+6 unsuccessful student/parent contact attempts in a row since the last successful contact on 10/15/2026:
+11/5 email to student and LC; 11/13 phone call/voicemail to LC; 11/16 phone call/voicemail to EC; 11/18 ParentSquare message to LC; 11/19 email to student and LC; 11/20 ParentSquare message to LC.
+Contacted: student, LC and EC.
 No response received.
 ```
+
+**Who each attempt went to.** The log adds "to student", "to LC", "to LG" or
+"to EC" after each attempt, and a closing **Contacted:** line. The script reads
+this from the note: the codes **LC**, **LG** and **EC** anywhere (capitals);
+"learning coach", "legal guardian" or "emergency contact" on a label line
+(the first line, or a line ending with ":" such as `Email to LC Tameika
+Moore (Mother):`); and greetings (`Hi Tameika,` matches Master's Learning
+Coach, `Hello Scholar,` or the student's first name means the student). A
+relationship such as `[Relative]` or `(Mother)` alone is not counted, so start
+those notes with the code, for example `EC Voicemail for Danielle Hayes:`.
+Each ECC attempt sent to PowerSchool also starts with the same `To: LC` line
+when the script can tell; ECC Contact History keeps the note as written.
 
 Each attempt gets one label from its note's first line (ParentSquare, email,
 text, phone/voicemail, absent from live class, checked in that order), or the
