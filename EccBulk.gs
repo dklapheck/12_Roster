@@ -4,13 +4,16 @@
  * Reviews use per-editor tokens. Only IDs are accepted from the dialog; source
  * dates/notes are checked again by Student Number before saving. Reopening the
  * review intentionally offers unchanged notes again. No source cells are cleared.
+ * A 5+ Attempt Log (AttemptStreak.gs) is offered only while one is due, so it
+ * is never offered twice in a streak. It is written from ECC Contact History.
  */
 const ECC_BULK = (() => {
   const TTL = 21600, PREFIX = 'ecc-bulk:';
-  const TYPES = ['Conversation', 'Attempt', 'Parent Contact'];
+  const TYPES = ['Conversation', 'Attempt', 'Parent Contact', '5+ Attempt Log'];
+  const FIVE = '5+ Attempt Log';
   const headersFor = type => {
     const F = ECC_LOG.FIELDS;
-    return type === 'Attempt' ? [F.contactDate, F.attemptNote] :
+    return type === FIVE ? [F.history] : type === 'Attempt' ? [F.contactDate, F.attemptNote] :
       type === 'Parent Contact' ? [F.contactDate, F.parentNote] : [F.date, ...F.notes.map(pair => pair[0])];
   };
   const triggersFor = type => {
@@ -46,8 +49,13 @@ const ECC_BULK = (() => {
         [CONFIG.text(raw('FIRST NAME')), CONFIG.text(raw('LAST NAME'))].filter(Boolean).join(' ') || key;
       const reader = ECC_LOG.valueReader(cells, mask, master.columns);
       TYPES.forEach(type => {
-        const triggers = triggersFor(type);
-        if (!triggers.some(h => CONFIG.text(raw(h)) || mask[master.columns.get(h) - 1])) return;
+        if (type === FIVE) {
+          if (typeof ATTEMPT_STREAK === 'undefined' || mask[master.columns.get(F.history) - 1] ||
+              !ATTEMPT_STREAK.status(raw(F.history)).due) return;
+        } else {
+          const triggers = triggersFor(type);
+          if (!triggers.some(h => CONFIG.text(raw(h)) || mask[master.columns.get(h) - 1])) return;
+        }
         const id = key + '|' + type;
         const record = {id, studentNumber: key, label, type,
           signature: signature(cells, mask, master.columns, type), reader};
@@ -111,13 +119,26 @@ const ECC_BULK = (() => {
         }
         const current = scan(master, ss), histories = new Map(), settings = state.settings || {}, links = [];
         // Validate the full selection and build every URL before returning writes.
-        ids.forEach(id => {
-          const record = current.get(id), reviewed = wanted.get(id);
-          if (!record || record.signature !== reviewed.signature) {
+        // 5+ Attempt Logs go last and are rewritten from the student's updated
+        // history, so attempts archived in the same batch are included and a
+        // conversation or parent contact in the batch is caught.
+        const ordered = ids.filter(id => !id.endsWith('|' + FIVE)).concat(ids.filter(id => id.endsWith('|' + FIVE)));
+        ordered.forEach(id => {
+          const reviewed = wanted.get(id);
+          // A saved 5+ Attempt Log is no longer due, so a retry rebuilds its link
+          // from the copy kept with the saved review.
+          const kept = state.state === 'saved' && state.five && state.five[id];
+          const record = kept ? Object.assign({}, kept, {id, type: FIVE}) : current.get(id);
+          if (!record || (!kept && record.signature !== reviewed.signature)) {
             throw new Error('ECC dates or notes changed since this review (' + id + '). Reopen the review.');
           }
           if (record.error) throw new Error(record.label + ': ' + record.error);
-          const type = record.type, entry = record.entry, key = record.studentNumber;
+          const type = record.type, key = record.studentNumber;
+          let entry = record.entry;
+          if (type === FIVE && histories.has(key)) {
+            try { entry = ECC_LOG.readEntry({get: () => histories.get(key)}, type, ss); }
+            catch (error) { throw new Error(record.label + ': uncheck the 5+ Attempt Log. ' + error.message); }
+          }
           const info = ECC_LOG.typeInfo(type);
           if (!settings[type]) settings[type] = POWERSCHOOL.settings(ss, info.workflow);
           let nearLimit = false;
@@ -130,13 +151,20 @@ const ECC_BULK = (() => {
             studentNumber: key, date: entry.date, outcome: info.workflow,
             note: POWERSCHOOL.withOpening(settings[type], entry.powerSchoolNote)
           }, settings[type], reviewed.requestId);
-          links.push({id, studentNumber: key, label: record.label, type, date: entry.date, url, nearLimit});
+          links.push({id, studentNumber: key, label: record.label, type, date: entry.date, url, nearLimit,
+            entry: type === FIVE ? {date: entry.date, powerSchoolNote: entry.powerSchoolNote} : undefined});
+        });
+        const five = {};
+        links.forEach(link => {
+          if (link.type === FIVE) five[link.id] = {studentNumber: link.studentNumber, label: link.label, entry: link.entry};
+          delete link.entry;
         });
         result = {links, students: new Set(links.map(link => link.id.split('|')[0])).size};
         // Retrying the same dialog after a lost response returns the same links,
         // without archiving that request twice. A NEW review always logs again.
         if (state.state === 'saved') return [];
         state.state = 'saving'; state.selected = ids; state.settings = settings;
+        state.five = five;
         put(token, state); claimed = true;
         return {bulk: true, fields: [...histories].map(([studentNumber, value]) => ({
           studentNumber, header: F.history, value
@@ -146,7 +174,7 @@ const ECC_BULK = (() => {
       if (claimed) { state.state = 'pending'; put(token, state); }
       throw error;
     }
-    if (claimed) { state.state = 'saved'; put(token, state); }
+    if (claimed) { state.state = 'saved'; put(token, state); ECC_LOG.recolor(); }
     CONFIG.log('INFO', 'Bulk ECC archive', '', 'Archived selection; PowerSchool submission is manual.',
       JSON.stringify({students: result.students, entries: result.links.length}));
     return result;

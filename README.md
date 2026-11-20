@@ -71,6 +71,53 @@ separately checked Parent Contact entry, with its own PowerSchool link.
 Parent Communication stays on Master after logging, like the ECC notes; clear it
 yourself when done.
 
+## 5+ Attempt Log
+
+A **streak** is every `[Attempt]` in ECC Contact History since the last
+successful contact (`[Conversation]`, `[Parent Contact]`, or an older
+`-- 9/14/2026: ...` entry). When a streak reaches 5 attempts, the student is due
+**one** 5+ Attempt Log. Only a successful contact starts a new streak.
+
+| ECC Contact History | Color | Offered for logging? |
+|---|---|---|
+| Fewer than 5 attempts in the streak | none | No |
+| 5+ attempts, not logged yet | red | Yes, once |
+| Streak has a 5+ Attempt Log (more attempts keep it yellow) | yellow | No |
+| A successful contact is newer than all of those | none | No (counting starts over) |
+
+**Archive and Log All ECC** lists every due student as a checked
+**5+ attempt log**. To log one student, select the row and choose **Update →
+ECC & Demographics → Log selected student's 5+ attempt log**. No Master cell is
+used: the script writes the entry from the history and dates it today:
+
+```
+-- 11/20/2026 [5+ Attempt Log]
+6 unsuccessful student/parent contact attempts in a row since the last successful contact on 11/4/2026:
+11/4 ParentSquare message; 11/5 email; 11/12 email; 11/12 absent from live class; 11/18 phone call/voicemail; 11/19 email.
+No response received.
+```
+
+Each attempt gets one label from its note's first line (ParentSquare, email,
+text, phone/voicemail, absent from live class, checked in that order), or the
+start of the note when none fits. PowerSchool gets the same text on one line.
+If the same batch also archives an attempt for that student, the log includes
+it; if it archives a conversation or parent contact, the batch stops and asks
+you to uncheck the log.
+
+The log uses the **5+ Attempts** row of PowerSchoolSettings on Info (its own
+Log Type and Subtype, or both blank to choose them in PowerSchool each time).
+The row must sit directly under the other workflow rows with no blank row
+between. PowerSchool Helper fills it like a Parent Contact log: it keeps the
+subtype's template text, and its status button says "Parent Contact".
+
+The script owns the fill color of the ECC Contact History column. Colors update
+after every archive; after editing a history cell by hand, run **Update →
+Maintenance → Refresh 5+ attempt colors**.
+
+Install: add `AttemptStreak.gs`, update `LogECC.gs`, `EccBulk.gs`,
+`EccBulkDialog.html` and `Menus.gs`, run `installRosterTools` (it checks the
+5+ Attempts row), reload the sheet, then run **Refresh 5+ attempt colors** once.
+
 ## Archive and log ECC conversations and attempts
 
 Install `EccBulk.gs` and `EccBulkDialog.html` along with the updated `LogECC.gs`,

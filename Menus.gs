@@ -1,4 +1,5 @@
-/** All 12RosterORN menus (v4.1). Requires Config.gs.
+/** All 12RosterORN menus (v4.2). Requires Config.gs.
+ * v4.2: 5+ attempt log (AttemptStreak.gs) and its colors.
  * v4.1: Parent Contact logging; installRosterTools renames ECC Attempt Date
  * to Contact Date once.
  * v3.0: Master only. Check roster sync and Add columns were removed (there is
@@ -27,6 +28,7 @@ function buildMenus_() {
         .addItem('Log selected student\u2019s conversation', 'archiveEccConversationAndOpenPowerSchool')
         .addItem('Log selected student\u2019s attempt', 'archiveEccAttemptAndOpenPowerSchool')
         .addItem('Log selected student\u2019s parent contact', 'archiveParentContactAndOpenPowerSchool')
+        .addItem('Log selected student\u2019s 5+ attempt log', 'archiveFiveAttemptLogAndOpenPowerSchool')
         .addItem('Open Student Demographics', 'openStudentDemographics')
     )
     .addSubMenu(
@@ -55,6 +57,7 @@ function buildMenus_() {
     .addSubMenu(
       ui.createMenu('Maintenance')
         .addItem('Refresh Call Due colors', 'applyCallDueColors')
+        .addItem('Refresh 5+ attempt colors', 'refreshFiveAttemptColors')
         .addItem('Extend Master filter to all columns', 'extendMasterFilter')
         .addItem('Check setup', 'checkRosterSetup')
     )
@@ -62,7 +65,8 @@ function buildMenus_() {
 }
 
 /** Rows the PowerSchoolSettings table on Info must contain. */
-const POWERSCHOOL_WORKFLOWS_ = ['SCC Success', 'SCC Attempt', 'ECC Conversation', 'ECC Attempt', 'Parent Contact'];
+const POWERSCHOOL_WORKFLOWS_ = ['SCC Success', 'SCC Attempt', 'ECC Conversation', 'ECC Attempt', 'Parent Contact',
+  '5+ Attempts'];
 
 /** One setup for every tool: checks Master's headers, the Call named ranges and
  * the PowerSchool settings, then shows the menus. Changes no student data.
