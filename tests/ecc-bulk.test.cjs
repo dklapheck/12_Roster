@@ -6,9 +6,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const load = (ctx, file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), ctx);
 const plain = value => JSON.parse(JSON.stringify(value));
-const headers = ['Student Number', 'Preferred Name', 'FIRST NAME', 'LAST NAME', 'ECC Date',
+const HEADERS = ['Student Number', 'Preferred Name', 'FIRST NAME', 'LAST NAME', 'ECC Date',
   'ECC Overall', 'ECC Classes', 'ECC Grades', 'ECC Social', 'ECC Follow-up',
-  'ECC Contact History', 'ECC Attempt Date', 'New Attempt Student Contact'];
+  'ECC Contact History', 'Contact Date', 'New Attempt Student Contact', 'Parent Communication'];
 class Clock extends Date {
   constructor(...args) { super(...(args.length ? args : ['2026-10-24T00:30:00Z'])); }
 }
@@ -19,12 +19,12 @@ function formatDate(date, timezone, format) {
   if (format === 'yyyyMMdd') return parts.year + parts.month.padStart(2, '0') + parts.day.padStart(2, '0');
   return parts.month + '/' + parts.day + '/' + parts.year;
 }
-function fixture() {
+function fixture(headers = [...HEADERS]) {
   const old = new Clock('2026-10-21T12:00:00Z'), today = new Clock('2026-10-23T12:00:00Z');
   const cells = [
-    ['11', 'Student One', '', '', old, 'Discussed progress', 'English work', '', '', 'Follow up', '', today, 'Called; no answer'],
-    ['22', 'Followup Only', '', '', old, '', '', '', '', 'Follow-up by itself', '', '', ''],
-    ['33', 'Student Three', '', '', '', '', '', '', '', '', '', old, 'Email reminder']
+    ['11', 'Student One', '', '', old, 'Discussed progress', 'English work', '', '', 'Follow up', '', today, 'Called; no answer', ''],
+    ['22', 'Followup Only', '', '', old, '', '', '', '', 'Follow-up by itself', '', '', '', ''],
+    ['33', 'Student Three', '', '', '', '', '', '', '', '', '', old, 'Email reminder', '']
   ];
   const formulas = cells.map(row => row.map(() => ''));
   const writes = [], cache = new Map(), logs = [], dialogs = [];
@@ -34,6 +34,7 @@ function fixture() {
       cells.slice(r - 2, r - 2 + height).map(row => row.slice(c - 1, c - 1 + width)),
     getFormulas: () => formulas.slice(r - 2, r - 2 + height).map(row => row.slice(c - 1, c - 1 + width)),
     getNumberFormats: () => Array.from({length: height}, () => Array(width).fill('@')),
+    setValue: value => { if (r === 1) headers[c - 1] = value; else cells[r - 2][c - 1] = value; },
     setValues: values => {
       if (++writeCalls === failAt) throw Error('Simulated write failure');
       writes.push({r, c, values: plain(values)});
@@ -45,7 +46,8 @@ function fixture() {
   const settingsGrid = [
     ['Workflow', 'Opening Log Text', 'Log Type value', 'Subtype value', 'Log date field', 'Tag label'],
     ['ECC Conversation', 'Conversation opening', 'contact', 'success', 'log_date', 'ECC'],
-    ['ECC Attempt', 'Attempt opening', 'contact', 'attempt', 'log_date', 'Attempt']
+    ['ECC Attempt', 'Attempt opening', 'contact', 'attempt', 'log_date', 'Attempt'],
+    ['Parent Contact', 'Parent opening', 'contact', 'parent', 'log_date', '']
   ];
   const ss = {getId: () => '1q0y5VI2e1RYhiEriAu2msTGuOsyCwmun_qHmrjDUBJA',
     getSpreadsheetTimeZone: () => 'America/Los_Angeles', toast: () => {},
@@ -63,17 +65,18 @@ function fixture() {
     SpreadsheetApp: {getActiveSpreadsheet: () => ss, flush: () => {},
       getActiveRange: () => ({getSheet: () => sheet, getRow: () => 2, getNumRows: () => 1}),
       getUi: () => ({showModalDialog: (output, title) => dialogs.push({output, title})})},
-    HtmlService: {createHtmlOutputFromFile: file => ({file, setWidth(){return this;}, setHeight(){return this;}})}
+    HtmlService: {createHtmlOutputFromFile: file => ({file, setWidth(){return this;}, setHeight(){return this;}}),
+      createHtmlOutput: html => ({html, setWidth(){return this;}, setHeight(){return this;}})}
   });
   // Bulk may be loaded before LogECC by Apps Script. Dependencies must be lazy.
   load(ctx, 'EccBulk.gs'); load(ctx, 'Config.gs'); load(ctx, 'MasterSave.gs');
   load(ctx, 'EccPowerSchool.gs'); load(ctx, 'LogECC.gs');
   const bulk = vm.runInContext('ECC_BULK', ctx), ecc = vm.runInContext('ECC_LOG', ctx);
-  const set = (row, header, value) => { cells[row][headers.indexOf(header)] = value; };
-  const get = (row, header) => cells[row][headers.indexOf(header)];
-  const decode = link => JSON.parse(Buffer.from(link.url.split('#ecc=')[1], 'base64url'));
+  const set = (row, header, value) => { cells[row][HEADERS.indexOf(header)] = value; };
+  const get = (row, header) => cells[row][HEADERS.indexOf(header)];
+  const decode = link => JSON.parse(Buffer.from(link.url.split(/#(?:ecc|parent)=/)[1], 'base64url'));
   const all = review => plain(review.entries.map(entry => entry.id));
-  return {ctx, cells, formulas, writes, cache, logs, dialogs, settingsGrid, ss, sheet, bulk, ecc, set, get, decode, all,
+  return {ctx, headers, cells, formulas, writes, cache, logs, dialogs, settingsGrid, ss, sheet, bulk, ecc, set, get, decode, all,
     failWrite: n => {failAt = writeCalls + n;}};
 }
 
@@ -105,9 +108,9 @@ test('bulk saves both entries in date order, builds distinct PS handoffs with wo
   assert.match(payloads[0].note, /^Conversation opening \| Discussed progress \| Classes: English work/);
   assert.doesNotMatch(payloads[0].note, /[\r\n]/);
   assert.match(payloads[1].note, /^Attempt opening \| Called; no answer$/);
-  assert.equal(f.writes.every(w => w.c === headers.indexOf('ECC Contact History') + 1), true);
-  f.cells.forEach((row, index) => assert.deepEqual(plain(row.filter((_, c) => headers[c] !== 'ECC Contact History')),
-    before[index].filter((_, c) => headers[c] !== 'ECC Contact History')));
+  assert.equal(f.writes.every(w => w.c === HEADERS.indexOf('ECC Contact History') + 1), true);
+  f.cells.forEach((row, index) => assert.deepEqual(plain(row.filter((_, c) => HEADERS[c] !== 'ECC Contact History')),
+    before[index].filter((_, c) => HEADERS[c] !== 'ECC Contact History')));
 });
 
 test('unchecking entries saves only the selected type/student, even after Master rows are sorted', () => {
@@ -139,7 +142,7 @@ for (const mutation of ['notes', 'date', 'formula', 'removed', 'duplicate']) {
     const f = fixture(), review = f.bulk.review();
     if (mutation === 'notes') f.set(0, 'ECC Overall', 'Changed after review');
     if (mutation === 'date') f.set(0, 'ECC Date', new Clock('2026-10-20T12:00:00Z'));
-    if (mutation === 'formula') f.formulas[0][headers.indexOf('ECC Overall')] = '=A1';
+    if (mutation === 'formula') f.formulas[0][HEADERS.indexOf('ECC Overall')] = '=A1';
     if (mutation === 'removed') f.cells[0][0] = '';
     if (mutation === 'duplicate') f.cells[1][0] = '11';
     assert.throws(() => f.bulk.archive(review.token, f.all(review)), /changed since|duplicate Student Number/);
@@ -176,7 +179,7 @@ test('failed batch writes roll back earlier rows and leave the review available 
 });
 
 test('missing workflow settings cancel all archives before saving', () => {
-  const f = fixture(), review = f.bulk.review(); f.settingsGrid.pop();
+  const f = fixture(), review = f.bulk.review(); f.settingsGrid.splice(2, 1);
   assert.throws(() => f.bulk.archive(review.token, f.all(review)), /Expected one PowerSchool settings row/);
   assert.equal(f.writes.length, 0);
 });
@@ -223,4 +226,120 @@ test('Update exposes logging and demographics first and repeats both in the ECC 
   f.ctx.archiveAndLogAllEcc();
   assert.equal(f.dialogs[0].output.file, 'EccBulkDialog');
   assert.equal(f.writes.length, 0);
+});
+
+test('Parent Communication is offered as its own entry, dated by Contact Date, and logged as a Parent Contact handoff', () => {
+  const f = fixture();
+  f.set(2, 'Parent Communication', 'Spoke with mom about missing work');
+  const review = f.bulk.review();
+  const parent = review.entries.find(e => e.id === '33|Parent Contact');
+  assert.equal(parent.type, 'Parent Contact');
+  assert.equal(parent.date, '10/21/2026');
+  assert.match(parent.note, /^-- 10\/21\/2026 \[Parent Contact\]\nSpoke with mom/);
+  const result = f.bulk.archive(review.token, ['33|Attempt', '33|Parent Contact']);
+  const link = result.links.find(l => l.type === 'Parent Contact');
+  assert.match(link.url, /#parent=/);
+  const payload = f.decode(link);
+  assert.equal(payload.outcome, 'Parent Contact');
+  assert.equal(payload.settings.subtypeValue, 'parent');
+  assert.equal(payload.date, '10/21/2026');
+  assert.equal(payload.note, 'Parent opening | Spoke with mom about missing work');
+  assert.match(f.decode(result.links.find(l => l.type === 'Attempt')).note, /^Attempt opening/);
+  const history = f.get(2, 'ECC Contact History');
+  assert.match(history, /\[Parent Contact\]\nSpoke with mom/);
+  assert.match(history, /\[Attempt\]\nEmail reminder/);
+  assert.equal(f.get(2, 'Parent Communication'), 'Spoke with mom about missing work');
+});
+
+test('a Parent Contact needs a valid Contact Date and its own settings row', () => {
+  const f = fixture();
+  f.set(0, 'Parent Communication', 'Emailed dad');
+  f.set(0, 'Contact Date', '');
+  let review = f.bulk.review();
+  assert.match(review.entries.find(e => e.id === '11|Parent Contact').error, /valid date in Contact Date/);
+  f.set(0, 'Contact Date', new Clock('2026-10-23T12:00:00Z'));
+  f.settingsGrid.pop();
+  review = f.bulk.review();
+  assert.throws(() => f.bulk.archive(review.token, ['11|Parent Contact']), /Expected one PowerSchool settings row for Parent Contact/);
+  assert.equal(f.writes.length, 0);
+});
+
+test('individual Parent Contact action archives to history and opens a parent PowerSchool dialog', () => {
+  const f = fixture();
+  f.set(0, 'Parent Communication', 'Text with grandma');
+  const originalRange = f.sheet.getRange;
+  f.sheet.getRange = (...args) => ({...originalRange(...args), getValue: () => '11'});
+  const result = f.ctx.archiveParentContactAndOpenPowerSchool();
+  assert.equal(result.outcome, 'Parent Contact');
+  assert.match(f.get(0, 'ECC Contact History'), /^-- 10\/23\/2026 \[Parent Contact\]\nText with grandma$/);
+  assert.equal(f.dialogs.length, 1);
+  assert.equal(f.dialogs[0].title, 'Open PowerSchool Parent Contact Log');
+  const href = f.dialogs[0].output.html.match(/href="([^"]+)"/)[1];
+  const payload = JSON.parse(Buffer.from(href.split('#parent=')[1], 'base64url'));
+  assert.equal(payload.outcome, 'Parent Contact');
+  assert.equal(payload.note, 'Parent opening | Text with grandma');
+  assert.equal(payload.nearLimit, undefined);
+});
+
+test('setup renames ECC Attempt Date to Contact Date once, and validation explains the old header', () => {
+  const old = HEADERS.map(h => h === 'Contact Date' ? 'ECC Attempt Date' : h);
+  const f = fixture(old);
+  const before = plain(f.cells);
+  assert.throws(() => f.ecc.validate(), /Rename the Master header ECC Attempt Date to Contact Date/);
+  assert.equal(f.ecc.renameContactDateHeader(), true);
+  assert.deepEqual(f.headers, HEADERS);
+  assert.deepEqual(plain(f.cells), before);
+  assert.equal(f.ecc.renameContactDateHeader(), false);
+  f.ecc.validate();
+});
+
+for (const field of ['Parent Communication', 'Contact Date']) {
+  test('changed Parent Contact ' + field + ' cancels a mixed batch before any write', () => {
+    const f = fixture(); f.set(0, 'Parent Communication', 'Spoke with mom');
+    const review = f.bulk.review();
+    f.set(0, field, field === 'Contact Date' ? new Clock('2026-10-22T12:00:00Z') : 'New message');
+    assert.throws(() => f.bulk.archive(review.token, f.all(review)), /changed since/);
+    assert.equal(f.writes.length, 0);
+  });
+}
+
+test('Parent Contact formula notes cannot be archived', () => {
+  const f = fixture(); f.set(0, 'Parent Communication', 'Generated note');
+  f.formulas[0][HEADERS.indexOf('Parent Communication')] = '=A1';
+  const review = f.bulk.review();
+  assert.match(review.entries.find(e => e.id === '11|Parent Contact').error, /Use a value/);
+  assert.throws(() => f.bulk.archive(review.token, f.all(review)), /Use a value/);
+  assert.equal(f.writes.length, 0);
+});
+
+test('Parent Contact uses its own date in existing history and allows blank Type/Subtype settings', () => {
+  const f = fixture();
+  f.set(0, 'Parent Communication', 'Spoke with dad');
+  f.set(0, 'ECC Contact History', '-- 10/24/2026 [Conversation]\nNewer\n\n-- 10/20/2026 [Attempt]\nOlder');
+  f.settingsGrid[3][2] = ''; f.settingsGrid[3][3] = '';
+  const review = f.bulk.review(), result = f.bulk.archive(review.token, ['11|Parent Contact']);
+  assert.equal(f.get(0, 'ECC Contact History'), '-- 10/24/2026 [Conversation]\nNewer\n\n' +
+    '-- 10/23/2026 [Parent Contact]\nSpoke with dad\n\n-- 10/20/2026 [Attempt]\nOlder');
+  assert.equal(f.decode(result.links[0]).settings.typeValue, '');
+  assert.equal(f.decode(result.links[0]).settings.subtypeValue, '');
+});
+
+test('Parent Contact and ECC writes roll back together if a later student fails', () => {
+  const f = fixture(); f.set(0, 'Parent Communication', 'Called mom');
+  const before = plain(f.cells), review = f.bulk.review(); f.failWrite(2);
+  assert.throws(() => f.bulk.archive(review.token, f.all(review)), /Save failed/);
+  assert.deepEqual(plain(f.cells), before);
+  assert.equal(f.bulk.archive(review.token, f.all(review)).links.length, 4);
+});
+
+test('Parent Contact appears in the ECC submenu', () => {
+  const f = fixture(), menus = [];
+  f.ctx.SpreadsheetApp.getUi = () => ({createMenu: title => {
+    const menu = {title, items: [], addItem(label, handler){this.items.push({label, handler});return this;},
+      addSeparator(){return this;}, addSubMenu(submenu){this.items.push(submenu);return this;}, addToUi(){menus.push(this);}};
+    return menu;
+  }});
+  load(f.ctx, 'Menus.gs'); f.ctx.onOpen();
+  const submenu = menus[0].items.find(item => item.title === 'ECC & Demographics');
+  assert.ok(submenu.items.some(item => item.handler === 'archiveParentContactAndOpenPowerSchool'));
 });

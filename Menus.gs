@@ -1,4 +1,6 @@
-/** All 12RosterORN menus (v4.0). Requires Config.gs.
+/** All 12RosterORN menus (v4.1). Requires Config.gs.
+ * v4.1: Parent Contact logging; installRosterTools renames ECC Attempt Date
+ * to Contact Date once.
  * v3.0: Master only. Check roster sync and Add columns were removed (there is
  * nothing to sync, and a column is added by inserting it on Master).
  * Functions were renamed; OldNames.gs keeps the old names working until any
@@ -22,6 +24,7 @@ function buildMenus_() {
         .addItem('Archive and Log All ECC', 'archiveAndLogAllEcc')
         .addItem('Log selected student\u2019s conversation', 'archiveEccConversationAndOpenPowerSchool')
         .addItem('Log selected student\u2019s attempt', 'archiveEccAttemptAndOpenPowerSchool')
+        .addItem('Log selected student\u2019s parent contact', 'archiveParentContactAndOpenPowerSchool')
         .addItem('Open Student Demographics', 'openStudentDemographics')
     )
     .addSubMenu(
@@ -56,19 +59,25 @@ function buildMenus_() {
     .addToUi();
 }
 
+/** Rows the PowerSchoolSettings table on Info must contain. */
+const POWERSCHOOL_WORKFLOWS_ = ['SCC Success', 'SCC Attempt', 'ECC Conversation', 'ECC Attempt', 'Parent Contact'];
+
 /** One setup for every tool: checks Master's headers, the Call named ranges and
  * the PowerSchool settings, then shows the menus. Changes no student data.
  * Safe to run again. */
 function installRosterTools() {
   const ss = CONFIG.workbook();
+  // Header only: ECC Attempt Date becomes Contact Date (no student data changes).
+  const renamed = ECC_LOG.renameContactDateHeader();
   saveToMaster(master => { CALL_FORM.validate(master); return []; });
   ECC_LOG.validate();
   if (!ss.getSheetByName('Call') || !ss.getSheetByName('Info')) throw new Error('Call and Info tabs must exist.');
   if (typeof POWERSCHOOL === 'undefined') throw new Error('Add EccPowerSchool.gs before installing.');
-  ['SCC Success', 'SCC Attempt', 'ECC Conversation', 'ECC Attempt'].forEach(w => POWERSCHOOL.settings(ss, w));
+  POWERSCHOOL_WORKFLOWS_.forEach(w => POWERSCHOOL.settings(ss, w));
   CALL_FORM.setupNames();
   buildMenus_();
-  ss.toast('Menus ready. Student data was not changed.', 'Roster tools', 8);
+  ss.toast('Menus ready. Student data was not changed.' +
+    (renamed ? ' Renamed ECC Attempt Date to Contact Date.' : ''), 'Roster tools', 8);
 }
 
 /** Validate existing setup without creating names or changing any cells. */
@@ -77,6 +86,6 @@ function checkRosterSetup() {
   saveToMaster(master => { CALL_FORM.validate(master); return []; });
   ECC_LOG.validate();
   if (!ss.getSheetByName('Call') || !ss.getSheetByName('Info')) throw new Error('Call and Info tabs must exist.');
-  ['SCC Success', 'SCC Attempt', 'ECC Conversation', 'ECC Attempt'].forEach(w => POWERSCHOOL.settings(ss, w));
+  POWERSCHOOL_WORKFLOWS_.forEach(w => POWERSCHOOL.settings(ss, w));
   ss.toast('Roster headers and PowerSchool settings checked.', 'Roster tools', 8);
 }

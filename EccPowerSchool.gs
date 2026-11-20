@@ -1,4 +1,4 @@
-/** Shared SCC, ECC and demographics PowerSchool handoff. Requires Config.gs.
+/** Shared SCC, ECC, Parent Contact and demographics PowerSchool handoff. Requires Config.gs.
  * Settings come from the PowerSchoolSettings table on Info, found by its
  * "Workflow" header wherever it sits, so adding columns or moving the table
  * needs no code change. "Opening Log Text" (optional, per workflow) is put at
@@ -135,6 +135,7 @@ const POWERSCHOOL_HANDOFF_PATH_ = '/teachers/home.html';
 const POWERSCHOOL_HANDOFF_TYPES_ = Object.freeze({
   scc: true,
   ecc: true,
+  parent: true,
   demographics: true
 });
 
@@ -171,7 +172,7 @@ function escapePowerSchoolDialogAttribute_(value) {
 function buildPowerSchoolHandoffDialogHtml_(url) {
   const allowedUrl = new RegExp(
     '^https://californiak12\\.powerschool\\.com/teachers/home\\.html#' +
-    '(scc|ecc|demographics)=[A-Za-z0-9_-]+$'
+    '(scc|ecc|parent|demographics)=[A-Za-z0-9_-]+$'
   );
   if (!allowedUrl.test(String(url))) {
     throw new Error('The PowerSchool handoff URL is invalid.');
@@ -230,6 +231,7 @@ function showPowerSchoolHandoffDialog_(type, payload, title) {
   function handoff(type, payload, settings) {
     CONFIG.workbook();
     const title = type === 'demographics' ? 'Open PowerSchool Demographics' :
+      type === 'parent' ? 'Open PowerSchool Parent Contact Log' :
       'Open PowerSchool ' + type.toUpperCase() + ' Log';
     const requestId = Utilities.getUuid();
     const data = Object.assign({}, payload, {v: 1, requestId});

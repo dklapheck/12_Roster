@@ -1,4 +1,5 @@
-/** Review all Master ECC notes, archive selected entries, and queue PS logs.
+/** Review all Master ECC notes and parent contacts, archive selected entries,
+ * and list one PowerSchool log link per entry.
  * Requires LogECC.gs, EccPowerSchool.gs, Config.gs and MasterSave.gs.
  * Reviews use per-editor tokens. Only IDs are accepted from the dialog; source
  * dates/notes are checked again by Student Number before saving. Reopening the
@@ -6,9 +7,16 @@
  */
 const ECC_BULK = (() => {
   const TTL = 21600, PREFIX = 'ecc-bulk:';
+  const TYPES = ['Conversation', 'Attempt', 'Parent Contact'];
   const headersFor = type => {
     const F = ECC_LOG.FIELDS;
-    return type === 'Attempt' ? [F.attemptDate, F.attemptNote] : [F.date, ...F.notes.map(pair => pair[0])];
+    return type === 'Attempt' ? [F.contactDate, F.attemptNote] :
+      type === 'Parent Contact' ? [F.contactDate, F.parentNote] : [F.date, ...F.notes.map(pair => pair[0])];
+  };
+  const triggersFor = type => {
+    const F = ECC_LOG.FIELDS;
+    return type === 'Attempt' ? [F.attemptNote] :
+      type === 'Parent Contact' ? [F.parentNote] : F.notes.slice(0, 4).map(pair => pair[0]);
   };
 
   function signature(values, formulas, columns, type) {
@@ -24,7 +32,7 @@ const ECC_BULK = (() => {
   /** Includes filtered/hidden students. Two reads for all values and formulas. */
   function scan(master, ss) {
     const F = ECC_LOG.FIELDS;
-    const required = [F.date, F.history, F.attemptDate, F.attemptNote, ...F.notes.map(pair => pair[0])];
+    const required = [F.date, F.history, F.contactDate, F.attemptNote, F.parentNote, ...F.notes.map(pair => pair[0])];
     required.forEach(h => { if (!master.columns.has(h)) throw new Error('Missing LogECC header: ' + h); });
     const width = master.headers.length;
     const range = master.sheet.getRange(2, 1, master.lastRow - 1, width);
@@ -37,8 +45,8 @@ const ECC_BULK = (() => {
       const label = CONFIG.text(raw('Preferred Name')) ||
         [CONFIG.text(raw('FIRST NAME')), CONFIG.text(raw('LAST NAME'))].filter(Boolean).join(' ') || key;
       const reader = ECC_LOG.valueReader(cells, mask, master.columns);
-      ['Conversation', 'Attempt'].forEach(type => {
-        const triggers = type === 'Attempt' ? [F.attemptNote] : F.notes.slice(0, 4).map(pair => pair[0]);
+      TYPES.forEach(type => {
+        const triggers = triggersFor(type);
         if (!triggers.some(h => CONFIG.text(raw(h)) || mask[master.columns.get(h) - 1])) return;
         const id = key + '|' + type;
         const record = {id, studentNumber: key, label, type,
@@ -110,15 +118,16 @@ const ECC_BULK = (() => {
           }
           if (record.error) throw new Error(record.label + ': ' + record.error);
           const type = record.type, entry = record.entry, key = record.studentNumber;
-          if (!settings[type]) settings[type] = POWERSCHOOL.settings(ss, 'ECC ' + type);
+          const info = ECC_LOG.typeInfo(type);
+          if (!settings[type]) settings[type] = POWERSCHOOL.settings(ss, info.workflow);
           let nearLimit = false;
           if (state.state !== 'saved') {
             const history = histories.has(key) ? histories.get(key) : record.reader.get(F.history);
             const updated = ECC_LOG.append(history, entry, key);
             histories.set(key, updated.value); nearLimit = updated.nearLimit;
           }
-          const url = POWERSCHOOL.url('ecc', {
-            studentNumber: key, date: entry.date, outcome: 'ECC ' + type,
+          const url = POWERSCHOOL.url(info.handoff, {
+            studentNumber: key, date: entry.date, outcome: info.workflow,
             note: POWERSCHOOL.withOpening(settings[type], entry.powerSchoolNote)
           }, settings[type], reviewed.requestId);
           links.push({id, studentNumber: key, label: record.label, type, date: entry.date, url, nearLimit});

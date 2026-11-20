@@ -1,12 +1,17 @@
-/** LogECC v4.0 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
+/** LogECC v4.1 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
  * Menus are built by Menus.gs.
+ * v4.1: Parent Contact entries (successful parent contact from Parent
+ * Communication) and the ECC Attempt Date column renamed to Contact Date,
+ * which dates both attempts and parent contacts. installRosterTools renames
+ * the old header once.
  * v3.0: Master only. Select the student's row on Master. The one-time Old
  * Attempts merge was removed (that column is gone).
  *
  * ECC Contact History is one timeline, newest entry first. Conversations and
  * attempts both go there, each starting with a header line:
  *     -- 10/5/2026 [Conversation]        -- 10/2/2026 [Attempt]
- * A new entry is placed by its own date (ECC Date or ECC Attempt Date), so an
+ * Parent contacts use the same timeline:   -- 10/6/2026 [Parent Contact]
+ * A new entry is placed by its own date (ECC Date or Contact Date), so an
  * older attempt archived late still lands in the right spot.
  *
  * PowerSchool gets its own one-line version of the note (see EccPowerSchool).
@@ -25,8 +30,20 @@ const ECC_LOG = (() => {
       ['ECC Social', 'Socially'],
       ['ECC Follow-up', 'Actions / Follow up', 'Follow-up']
     ],
-    attemptDate: 'ECC Attempt Date', attemptNote: 'New Attempt Student Contact'
+    contactDate: 'Contact Date', attemptNote: 'New Attempt Student Contact',
+    parentNote: 'Parent Communication'
   };
+  const OLD_CONTACT_DATE = 'ECC Attempt Date';
+  // Entry type -> PowerSchoolSettings workflow row and extension handoff type.
+  const TYPES = Object.freeze({
+    'Conversation': {workflow: 'ECC Conversation', handoff: 'ecc'},
+    'Attempt': {workflow: 'ECC Attempt', handoff: 'ecc'},
+    'Parent Contact': {workflow: 'Parent Contact', handoff: 'parent'}
+  });
+  function typeInfo(type) {
+    if (!Object.prototype.hasOwnProperty.call(TYPES, type)) throw new Error('Unknown ECC entry type.');
+    return TYPES[type];
+  }
   const CELL_LIMIT = 50000, CELL_WARNING = 45000;
   // "-- 9/14/2026 [Conversation]" and the older "-- 9/14/2026: Good..." both start entries.
   const HEADER_LINE = /^-- (\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/;
@@ -90,16 +107,17 @@ const ECC_LOG = (() => {
 
   /** Shared formatter for individual and bulk logging. Dates are never changed. */
   function readEntry(central, type, ss) {
-    if (!['Conversation', 'Attempt'].includes(type)) throw new Error('Unknown ECC entry type.');
-    const attempt = type === 'Attempt';
-    const dateHeader = attempt ? FIELDS.attemptDate : FIELDS.date;
+    typeInfo(type);
+    const attempt = type === 'Attempt', parent = type === 'Parent Contact';
+    const dateHeader = attempt || parent ? FIELDS.contactDate : FIELDS.date;
     const date = central.get(dateHeader);
     if (!(date instanceof Date) || isNaN(date.getTime())) throw new Error('Enter a valid date in ' + dateHeader + '.');
     const label = Utilities.formatDate(date, ss.getSpreadsheetTimeZone(), 'M/d/yyyy');
     const lines = ['-- ' + label + ' [' + type + ']'], powerSchoolLines = [];
-    if (attempt) {
-      const note = text(central.get(FIELDS.attemptNote));
-      if (!note) throw new Error('Enter New Attempt Student Contact first.');
+    if (attempt || parent) {
+      const header = attempt ? FIELDS.attemptNote : FIELDS.parentNote;
+      const note = text(central.get(header));
+      if (!note) throw new Error('Enter ' + header + ' first.');
       lines.push(note); powerSchoolLines.push(note);
     } else {
       FIELDS.notes.forEach(([header, category, powerSchoolLabel]) => {
@@ -133,10 +151,11 @@ const ECC_LOG = (() => {
       const selection = selectedStudent(ss), key = selection.key;
       studentNumber = key;
       // Validate the optional handoff before changing any roster data.
+      const info = typeInfo(type);
       let settings;
       if (openPowerSchool) {
         if (typeof POWERSCHOOL === 'undefined') throw new Error('Add EccPowerSchool.gs to use PowerSchool handoffs.');
-        settings = POWERSCHOOL.settings(ss, 'ECC ' + type);
+        settings = POWERSCHOOL.settings(ss, info.workflow);
       }
       clock.lap('prepare');
       saveToMaster(master => {
@@ -145,7 +164,7 @@ const ECC_LOG = (() => {
         const central = rowReader(master.sheet, masterRow, master.columns);
         const entry = readEntry(central, type, ss);
         const updated = append(central.get(FIELDS.history), entry, key);
-        payload = {studentNumber: key, date: entry.date, outcome: 'ECC ' + type,
+        payload = {studentNumber: key, date: entry.date, outcome: info.workflow,
           note: openPowerSchool ? POWERSCHOOL.withOpening(settings, entry.powerSchoolNote) : entry.note,
           nearLimit: updated.nearLimit};
         return [{studentNumber: key, header: FIELDS.history, value: updated.value}];
@@ -153,8 +172,12 @@ const ECC_LOG = (() => {
       archived = true;
       clock.lap('save');
       // Open PowerSchool first so nothing else delays the dialog.
-      if (openPowerSchool) { POWERSCHOOL.open(payload, settings); clock.lap('dialog'); }
-      ss.toast('ECC entry saved to Master.' +
+      if (openPowerSchool) {
+        POWERSCHOOL.handoff(info.handoff, {studentNumber: payload.studentNumber, date: payload.date,
+          note: payload.note, outcome: payload.outcome}, settings);
+        clock.lap('dialog');
+      }
+      ss.toast((type === 'Parent Contact' ? 'Parent contact' : 'ECC entry') + ' saved to ECC Contact History.' +
         (payload.nearLimit ? ' History is close to the cell size limit.' : ''), 'ECC Tools', 6);
       CONFIG.log('INFO', action, key, 'Entry archived to Master.', JSON.stringify({type, ms: clock.done()}));
       return payload;
@@ -169,17 +192,37 @@ const ECC_LOG = (() => {
   /** Checks Master has every LogECC field. Writes nothing. */
   function validate() {
     saveToMaster(master => {
-      [FIELDS.date, FIELDS.history, FIELDS.attemptDate, FIELDS.attemptNote,
+      if (!master.columns.has(FIELDS.contactDate) && master.columns.has(OLD_CONTACT_DATE)) {
+        throw new Error('Rename the Master header ' + OLD_CONTACT_DATE + ' to ' + FIELDS.contactDate +
+          ' (installRosterTools does this for you).');
+      }
+      [FIELDS.date, FIELDS.history, FIELDS.contactDate, FIELDS.attemptNote, FIELDS.parentNote,
         ...FIELDS.notes.map(pair => pair[0])].forEach(header => {
         if (!master.columns.has(header)) throw new Error('Missing LogECC header: ' + header);
       });
       return [];
     });
   }
-  return Object.freeze({archive, validate, readEntry, append, valueReader, FIELDS});
+  /** One-time header rename: ECC Attempt Date -> Contact Date. Changes only that
+   * header cell; returns true if it renamed. Safe to run again. */
+  function renameContactDateHeader() {
+    const ss = CONFIG.workbook();
+    return CONFIG.withLock(() => {
+      const sheet = ss.getSheetByName(CONFIG.MASTER);
+      const columns = CONFIG.headerColumns(sheet).columns;
+      if (columns.has(FIELDS.contactDate) || !columns.has(OLD_CONTACT_DATE)) return false;
+      sheet.getRange(1, columns.get(OLD_CONTACT_DATE)).setValue(FIELDS.contactDate);
+      CONFIG.log('INFO', 'Setup', '', 'Renamed Master header ' + OLD_CONTACT_DATE + ' to ' + FIELDS.contactDate + '.');
+      return true;
+    });
+  }
+  return Object.freeze({archive, validate, readEntry, append, valueReader, renameContactDateHeader,
+    typeInfo, TYPES, FIELDS});
 })();
 
 function archiveEccConversation() { return ECC_LOG.archive('Conversation', false); }
 function archiveEccConversationAndOpenPowerSchool() { return ECC_LOG.archive('Conversation', true); }
 function archiveEccAttempt() { return ECC_LOG.archive('Attempt', false); }
 function archiveEccAttemptAndOpenPowerSchool() { return ECC_LOG.archive('Attempt', true); }
+function archiveParentContact() { return ECC_LOG.archive('Parent Contact', false); }
+function archiveParentContactAndOpenPowerSchool() { return ECC_LOG.archive('Parent Contact', true); }
