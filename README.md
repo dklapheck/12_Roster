@@ -107,8 +107,14 @@ Moore (Mother):`); and greetings (`Hi Tameika,` matches Master's Learning
 Coach, `Hello Scholar,` or the student's first name means the student). A
 relationship such as `[Relative]` or `(Mother)` alone is not counted, so start
 those notes with the code, for example `EC Voicemail for Danielle Hayes:`.
-Each ECC attempt sent to PowerSchool also starts with the same `To: LC` line
-when the script can tell; ECC Contact History keeps the note as written.
+When an attempt is logged and the script can tell who it went to, the
+history header says so, `-- 11/20/2026 [Attempt LC]` or `[Attempt Student, LC]`,
+and the PowerSchool note starts with `To: LC`. When it can't tell, the header
+stays `[Attempt]`. Older `[Attempt]` entries are read from their note. You can
+add or correct the codes in a header by hand (for example change
+`[Attempt]` to `[Attempt EC]`); header codes win over the note, and any
+`[Attempt ...]` header still counts as an attempt. The note itself is kept as
+written.
 
 Each attempt gets one label from its note's first line (ParentSquare, email,
 text, phone/voicemail, absent from live class, checked in that order), or the

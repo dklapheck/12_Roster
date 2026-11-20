@@ -288,5 +288,26 @@ test('5+ log names who each attempt went to; each attempt PowerSchool note start
   const result = f.bulk.archive(review.token, f.all(review));
   const attempt = result.links.map(f.decode).find(p => p.studentNumber === '33');
   assert.equal(attempt.note, 'Attempt opening | To: LC | LC Voicemail: please call back');
-  assert.doesNotMatch(f.get(2, 'ECC Contact History'), /To: LC/, 'history keeps the note as written');
+  assert.equal(f.get(2, 'ECC Contact History'), '-- 10/23/2026 [Attempt LC]\nLC Voicemail: please call back',
+    'the header names who; the note is kept as written');
+});
+
+test('[Attempt LC] headers count as attempts, and header codes win over the note', () => {
+  const {streak} = fixture();
+  const history = [
+    '-- 11/20/2026 [Attempt LC]', 'ParentSquare:', 'Hi Tameika,', '',
+    '-- 11/19/2026 [Attempt Student, LC]', 'Email to student RJ Hager:', '',
+    '-- 11/16/2026 [Attempt EC]', 'Voicemail for Danielle Hayes [Relative]: call back', '',
+    '-- 11/13/2026 [attempt lg]', 'Called, no answer', '',
+    '-- 11/5/2026 [Attempt]', 'Hello Scholar,', '',
+    '-- 10/15/2026 [Conversation]', 'Fine'].join('\n');
+  const state = streak.status(history);
+  assert.equal(state.count, 5); assert.equal(state.color, 'red'); assert.equal(state.lastSuccess, '10/15/2026');
+  assert.deepEqual(plain(streak.entries(history).map(e => [e.type, e.who])), [
+    ['Attempt', ['LC']], ['Attempt', ['student', 'LC']], ['Attempt', ['EC']], ['Attempt', ['LG']],
+    ['Attempt', []], ['Conversation', []]]);
+  assert.match(streak.summary(state, {lc: 'Tameika Moore', student: 'RJ Hager'}),
+    /11\/5 email to student; 11\/13 phone call\/voicemail to LG; 11\/16 phone call\/voicemail to EC; 11\/19 email to student and LC; 11\/20 ParentSquare message to LC\.\nContacted: student, LC, LG and EC\./);
+  assert.equal(streak.attemptTag(['student', 'LC']), 'Attempt Student, LC');
+  assert.equal(streak.attemptTag([]), 'Attempt');
 });

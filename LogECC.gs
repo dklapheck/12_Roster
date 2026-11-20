@@ -1,7 +1,8 @@
 /** LogECC v4.2 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
  * Menus are built by Menus.gs.
- * v4.3: an attempt's PowerSchool note starts with "To: LC" (or student, LG,
- * EC) when AttemptStreak.gs can tell from the note. History is unchanged.
+ * v4.3: when AttemptStreak.gs can tell from the note who an attempt went to,
+ * the header says so, -- 11/20/2026 [Attempt LC], and the PowerSchool note
+ * starts with "To: LC". Otherwise the header stays [Attempt].
  * v4.2: 5+ Attempt Log entries (needs AttemptStreak.gs). The script writes the
  * note from ECC Contact History and dates it today; no Master cell is used.
  * Archiving recolors ECC Contact History.
@@ -14,7 +15,7 @@
  *
  * ECC Contact History is one timeline, newest entry first. Conversations and
  * attempts both go there, each starting with a header line:
- *     -- 10/5/2026 [Conversation]        -- 10/2/2026 [Attempt]
+ *     -- 10/5/2026 [Conversation]        -- 10/2/2026 [Attempt]  (or [Attempt LC])
  * Parent contacts use the same timeline:   -- 10/6/2026 [Parent Contact]
  * So do 5+ attempt logs:                   -- 11/20/2026 [5+ Attempt Log]
  * A new entry is placed by its own date (ECC Date or Contact Date), so an
@@ -131,7 +132,10 @@ const ECC_LOG = (() => {
       if (!note) throw new Error('Enter ' + header + ' first.');
       lines.push(note);
       const who = attempt && typeof ATTEMPT_STREAK !== 'undefined' ? ATTEMPT_STREAK.recipients(note, names(central)) : [];
-      if (who.length) powerSchoolLines.push('To: ' + ATTEMPT_STREAK.listWho(who));
+      if (who.length) {
+        lines[0] = '-- ' + label + ' [' + ATTEMPT_STREAK.attemptTag(who) + ']';
+        powerSchoolLines.push('To: ' + ATTEMPT_STREAK.listWho(who));
+      }
       powerSchoolLines.push(note);
     } else {
       FIELDS.notes.forEach(([header, category, powerSchoolLabel]) => {
