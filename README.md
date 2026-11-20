@@ -40,6 +40,37 @@ Preview shows proposed changes without saving them. Install the updated
 the column. The live Master header has already been changed to `% Passing`.
 Grade-report photo imports still target the separate **Grades** tab.
 
+## Log successful parent contacts (Parent Communication)
+
+Master's **ECC Attempt Date** column is now called **Contact Date**. It dates
+both ECC attempts and parent contacts.
+
+Setup, once:
+
+1. On **Info**, add a row to the PowerSchoolSettings table directly under its
+   last row (the table ends at the first blank Workflow cell). Put
+   `Parent Contact` in **Workflow**. Copy the three date-field cells and any
+   Opening Log Text from the ECC rows. Leave **Log Type value** and **Subtype
+   value** blank to choose them in PowerSchool each time, or fill them with the
+   extension's capture tool (**Parent Contact (successful)** →
+   **Copy Type/Subtype for Settings**).
+2. Install the updated `LogECC.gs`, `EccBulk.gs`, `EccBulkDialog.html`,
+   `EccPowerSchool.gs` and `Menus.gs`, then run `installRosterTools` once. It
+   renames the **ECC Attempt Date** header to **Contact Date** (only that
+   header cell) and checks the new settings row. Reload the spreadsheet.
+3. Install PowerSchool Helper 3.6.0 or later.
+
+To log one student: type the note in **Parent Communication**, put the date in
+**Contact Date**, select the student's row on Master, and choose **Update → ECC
+& Demographics → Log selected student's parent contact**. The note is added to
+**ECC Contact History** as `-- 11/19/2026 [Parent Contact]`, placed by date, and
+PowerSchool opens a Parent Contact log for you to review and submit.
+
+**Archive and Log All ECC** also lists every nonblank Parent Communication as a
+separately checked Parent Contact entry, with its own PowerSchool link.
+Parent Communication stays on Master after logging, like the ECC notes; clear it
+yourself when done.
+
 ## Archive and log ECC conversations and attempts
 
 Install `EccBulk.gs` and `EccBulkDialog.html` along with the updated `LogECC.gs`,
@@ -52,38 +83,30 @@ ECC Grades, or ECC Social is checked by default. ECC Follow-up is included in
 conversation notes, but does not qualify a student by itself. Every nonblank
 New Attempt Student Contact is offered as a separately checked attempt.
 
-The review uses the existing ECC Date and ECC Attempt Date without changing
+The review uses the existing ECC Date and Contact Date without changing
 them. Dates before today in the spreadsheet's timezone are flagged. Correct
 missing/invalid dates on Master and reopen the review, or uncheck those entries.
 Search narrows the display only; Select all and Clear all apply to the full list.
 The selection count includes checked entries hidden by search.
 
-Close all other PowerSchool student tabs, confirm this in the dialog, then click
-**Archive and Start Logging**. This saves the checked entries into ECC Contact
-History, newest date first, and opens only the first PowerSchool entry. A
-conversation and attempt for the same student remain two separate queue items.
-The notes and dates remain on Master. Review and submit each log in
-PowerSchool, then manually delete the source notes when done. Unchanged notes
-are offered and archived again on a new run; there is no duplicate-note filter.
-Individual ECC archive actions also archive repeated notes.
+Click **Archive and Show Links** to save the checked entries into ECC Contact
+History, newest date first, and display one PowerSchool link per entry. Nothing
+opens automatically. A conversation, attempt and parent contact for the same
+student remain separate entries. The notes and dates remain on Master.
+Unchanged notes are offered and archived again on a new run; there is no
+duplicate-note filter. Individual archive actions also archive repeated notes.
 
-PowerSchool student selection may be shared between tabs. Keep other student
-pages, including Demographics, closed throughout logging. The dialog reserves
-only one blank tab during the archive click and sends it to PowerSchool only
-after the archive succeeds. If blocked, **Open current entry** retries that same
-queue item. There are no links that open future students in parallel.
+PowerSchool student selection may be shared between tabs. Close other student
+pages, including Demographics, and open one log link at a time. Review and
+submit the log, verify it appears under the intended student's name and number,
+then close that PowerSchool tab before opening the next link.
 
-For each entry, submit the log in PowerSchool and check the saved log under the
-student name and number shown in the queue. Close that PowerSchool tab, then
-check **I submitted this log and verified it appears under [student]** and click
-**Verified — open next entry**. The next entry cannot open while the current tab
-is still open, or without this confirmation. A closed tab, a redirect, or an
-opened form does not count as a successful submission. These confirmations are
-manual; the roster cannot inspect the PowerSchool server's saved log. If a log
-cannot be found after Submit, leave the queue on that student and investigate
-before retrying or advancing. The final entry uses **Verified — finish logging**.
+The dialog marks clicked links as **opened** and counts link openings; it
+cannot confirm that PowerSchool saved a log or enforce closing other tabs. If
+a log cannot be found after Submit, investigate before retrying or opening
+another student. Delete source notes manually after verifying the saved logs.
 
-Retrying a current tab does not archive again. An expired review must be
+Clicking a displayed link again does not archive again. An expired review must be
 reopened; changes to reviewed notes or
 dates cancel the selected batch before saving. Sorts are supported because
 students are matched by Student Number. Script saves share the roster's lock

@@ -31,7 +31,7 @@
   </style>
 </head>
 <body>
-  <h2>Choose ECC conversations and attempts</h2>
+  <h2>Choose ECC conversations, attempts and parent contacts</h2>
   <p class="muted">Scope: all students on Master, including filtered and hidden rows. Existing dates are kept.
     Older dates are flagged. Notes remain until you delete them after logging in PowerSchool.</p>
   <div id="review">
@@ -67,9 +67,9 @@
     function selected() { return rows.filter(row => row.box.checked); }
     function summarize() {
       const picked = selected(), students = new Set(picked.map(row => row.entry.studentNumber)).size;
-      const conversations = picked.filter(row => row.entry.type === 'Conversation').length;
-      byId('summary').textContent = students + ' students selected · ' + conversations +
-        ' conversations · ' + (picked.length - conversations) + ' attempts';
+      const count = type => picked.filter(row => row.entry.type === type).length;
+      byId('summary').textContent = students + ' students selected · ' + count('Conversation') +
+        ' conversations · ' + count('Attempt') + ' attempts · ' + count('Parent Contact') + ' parent contacts';
       byId('save').disabled = busy || saved || !picked.length;
     }
     function render(data) {
@@ -81,7 +81,8 @@
         box.setAttribute('aria-label', 'Include ' + entry.label + ' ' + entry.type);
         box.addEventListener('change', summarize); include.append(box);
         tr.insertCell().textContent = entry.label + ' — ' + entry.studentNumber;
-        tr.insertCell().textContent = entry.type === 'Conversation' ? 'ECC success / conversation' : 'ECC attempt';
+        tr.insertCell().textContent = entry.type === 'Conversation' ? 'ECC success / conversation' :
+          entry.type === 'Parent Contact' ? 'Parent contact (successful)' : 'ECC attempt';
         const date = tr.insertCell(); date.textContent = entry.date || 'Missing / invalid';
         if (entry.oldDate) {
           const flag = document.createElement('div'); flag.textContent = 'Older than today'; flag.className = 'old'; date.append(flag);
@@ -98,7 +99,7 @@
         byId('entries').append(tr); rows.push({entry, box, tr});
       });
       document.querySelectorAll('.reviewControl').forEach(control => { control.disabled = false; });
-      summarize(); status(data.entries.length ? 'Review the checked entries, then archive them to get a PowerSchool link for each.' : 'No ECC conversations or attempts to archive.');
+      summarize(); status(data.entries.length ? 'Review the checked entries, then archive them to get a PowerSchool link for each.' : 'No ECC conversations, attempts or parent contacts to archive.');
     }
     function choose(checked) { rows.forEach(row => { row.box.checked = checked; }); summarize(); }
     function progress() {
