@@ -1,4 +1,4 @@
-/** 5+ Attempt Log v1.1 for 12RosterORN. Requires Config.gs, MasterSave.gs and LogECC.gs.
+/** 5+ Attempt Log v1.2 for 12RosterORN. Requires Config.gs, MasterSave.gs and LogECC.gs.
  *
  * A streak is every [Attempt] entry in ECC Contact History since the last
  * successful contact ([Conversation], [Parent Contact], or an older
@@ -12,6 +12,11 @@
  * It never counts as an attempt and is never offered again in the same streak.
  * Only a successful contact starts a new streak.
  *
+ * v1.2: each attempt says who it went to (student, LC, LG, EC). LogECC writes
+ * it in the entry header, -- 11/20/2026 [Attempt LC] or [Attempt Student, LC],
+ * and starts the attempt's PowerSchool note with "To: ...". [Attempt] with no
+ * codes (older entries) is read from the note instead. You can add or fix the
+ * codes in a header by hand; [Attempt ...] always counts as an attempt.
  * v1.1: colors are conditional formatting rules, placed first so they show
  * over other rules such as an every-other-row grey. They read the Attempt
  * Streak column on Master, which this script fills in (and adds once, at the
@@ -29,7 +34,15 @@ const ATTEMPT_STREAK = (() => {
   const HEADER = /^-- (\d{1,2})\/(\d{1,2})\/(\d{2,4})\b(.*)$/;
   const clean = value => String(value == null ? '' : value).replace(/\r\n?/g, '\n').trim();
 
-  /** History text -> [{date, type, note}], newest first (the order written). */
+  /** "Attempt LC, EC" -> {type: 'Attempt', who: ['LC', 'EC']}; other tags unchanged. */
+  function parseTag(tag) {
+    const match = tag.match(/^attempt\b[\s:,-]*(.*)$/i);
+    if (!match) return {type: tag, who: []};
+    const words = match[1].split(/[\s,\/&+]+|\band\b/i).map(w => w.trim()).filter(Boolean);
+    const who = WHO.filter(code => words.some(w => w.toLowerCase() === code.toLowerCase()));
+    return {type: 'Attempt', who};
+  }
+  /** History text -> [{date, type, who, note}], newest first (the order written). */
   function entries(history) {
     const list = [];
     clean(history).split('\n').forEach(line => {
@@ -37,11 +50,16 @@ const ATTEMPT_STREAK = (() => {
       if (match) {
         const tag = match[4].match(/^\s*\[([^\]]+)\]\s*(.*)$/);
         const rest = tag ? tag[2] : match[4].replace(/^\s*:?\s*/, '');
-        list.push({date: match[1] + '/' + match[2] + '/' + match[3],
-          type: tag ? tag[1].trim() : '', lines: rest.trim() ? [rest.trim()] : []});
+        const parsed = tag ? parseTag(tag[1].trim()) : {type: '', who: []};
+        list.push({date: match[1] + '/' + match[2] + '/' + match[3], type: parsed.type, who: parsed.who,
+          lines: rest.trim() ? [rest.trim()] : []});
       } else if (list.length) list[list.length - 1].lines.push(line);
     });
-    return list.map(e => ({date: e.date, type: e.type, note: e.lines.join('\n').trim()}));
+    return list.map(e => ({date: e.date, type: e.type, who: e.who, note: e.lines.join('\n').trim()}));
+  }
+  /** Header tag for an attempt: "Attempt", "Attempt LC", "Attempt Student, LC". */
+  function attemptTag(codes) {
+    return codes.length ? 'Attempt ' + codes.map(c => c === 'student' ? 'Student' : c).join(', ') : 'Attempt';
   }
 
   /** {count, attempts (oldest first), logged, logDate, lastSuccess, due, color} */
@@ -79,14 +97,60 @@ const ATTEMPT_STREAK = (() => {
   }
   const shortDate = date => date.replace(/\/\d{2,4}$/, '');
 
-  /** The entry's note lines (no header). */
-  function summary(state) {
+  // ---- who an attempt went to -------------------------------------------
+  // Codes anywhere in the note: LC, LG, EC (capitals, whole word). Words only
+  // on label lines ("Email to LC ...:", "Voicemail for ...:", the first line)
+  // and greeting lines ("Hi Tameika,"), so body text such as "check with your
+  // student" or "ask your learning coach" does not count.
+  const WHO = ['student', 'LC', 'LG', 'EC'];
+  const firstName = value => String(value == null ? '' : value).trim().split(/[\s,]+/)[0] || '';
+  const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /** names: {lc: Learning Coach, student: Preferred Name}, both optional. */
+  function recipients(note, names) {
+    const lines = clean(note).split('\n').map(line => line.trim()).filter(Boolean);
+    const found = new Set();
+    const text = lines.join('\n');
+    if (/\bLC\b/.test(text)) found.add('LC');
+    if (/\bLG\b/.test(text)) found.add('LG');
+    if (/\bEC\b/.test(text)) found.add('EC');
+    const lc = firstName(names && names.lc), student = firstName(names && names.student);
+    lines.forEach((line, i) => {
+      const greeting = line.match(/^(?:hi|hello|dear|good (?:morning|afternoon|evening))\b[\s,]*([^,!.:]*)/i);
+      if (greeting) {
+        const who = greeting[1].trim();
+        if (/learning coach/i.test(who) || (lc && new RegExp('^' + escape(lc) + '\\b', 'i').test(who))) found.add('LC');
+        else if (/guardian/i.test(who)) found.add('LG');
+        else if (/scholar|student/i.test(who) || (student && new RegExp('^' + escape(student) + '\\b', 'i').test(who))) found.add('student');
+        return;
+      }
+      if (i > 0 && !/:\s*$/.test(line)) return;   // label lines end with ":" (or are the first line)
+      const label = line.slice(0, 160);
+      if (/learning coach/i.test(label)) found.add('LC');
+      if (/legal guardian|\bguardian\b/i.test(label)) found.add('LG');
+      if (/emergency contact/i.test(label)) found.add('EC');
+      if (/\bto (?:the )?student\b|\bstudent\b.*\b(?:email|text|call|voicemail)|\bscholar\b/i.test(label)) found.add('student');
+    });
+    return WHO.filter(code => found.has(code));
+  }
+  const listWho = codes => codes.length < 3 ? codes.join(' and ') :
+    codes.slice(0, -1).join(', ') + ' and ' + codes[codes.length - 1];
+
+  /** The entry's note lines (no header). names: see recipients(). */
+  function summary(state, names) {
     const since = state.lastSuccess ? ' since the last successful contact on ' + state.lastSuccess : '';
-    return [
+    const everyone = new Set();
+    const items = state.attempts.map(a => {
+      const who = a.who && a.who.length ? a.who : recipients(a.note, names);
+      who.forEach(code => everyone.add(code));
+      return shortDate(a.date) + ' ' + methodOf(a.note) + (who.length ? ' to ' + listWho(who) : '');
+    });
+    const lines = [
       state.count + ' unsuccessful student/parent contact attempts in a row' + since + ':',
-      state.attempts.map(a => shortDate(a.date) + ' ' + methodOf(a.note)).join('; ') + '.',
-      'No response received.'
-    ].join('\n');
+      items.join('; ') + '.'
+    ];
+    if (everyone.size) lines.push('Contacted: ' + listWho(WHO.filter(code => everyone.has(code))) + '.');
+    lines.push('No response received.');
+    return lines.join('\n');
   }
 
   /** Why a student is not due, or '' when due. */
@@ -194,7 +258,7 @@ const ATTEMPT_STREAK = (() => {
     catch (error) { CONFIG.log('ERROR', '5+ Attempt Colors', '', error.message, CONFIG.errorDetails(error)); return null; }
   }
 
-  return Object.freeze({entries, status, summary, notDueReason, methodOf, label, formulas, ours,
+  return Object.freeze({entries, status, summary, recipients, listWho, attemptTag, notDueReason, methodOf, label, formulas, ours,
     recolor, recolorQuietly, LIMIT, TYPE, RED, YELLOW, COLUMN});
 })();
 

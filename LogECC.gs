@@ -1,5 +1,8 @@
 /** LogECC v4.2 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
  * Menus are built by Menus.gs.
+ * v4.3: when AttemptStreak.gs can tell from the note who an attempt went to,
+ * the header says so, -- 11/20/2026 [Attempt LC], and the PowerSchool note
+ * starts with "To: LC". Otherwise the header stays [Attempt].
  * v4.2: 5+ Attempt Log entries (needs AttemptStreak.gs). The script writes the
  * note from ECC Contact History and dates it today; no Master cell is used.
  * Archiving recolors ECC Contact History.
@@ -12,7 +15,7 @@
  *
  * ECC Contact History is one timeline, newest entry first. Conversations and
  * attempts both go there, each starting with a header line:
- *     -- 10/5/2026 [Conversation]        -- 10/2/2026 [Attempt]
+ *     -- 10/5/2026 [Conversation]        -- 10/2/2026 [Attempt]  (or [Attempt LC])
  * Parent contacts use the same timeline:   -- 10/6/2026 [Parent Contact]
  * So do 5+ attempt logs:                   -- 11/20/2026 [5+ Attempt Log]
  * A new entry is placed by its own date (ECC Date or Contact Date), so an
@@ -127,7 +130,13 @@ const ECC_LOG = (() => {
       const header = attempt ? FIELDS.attemptNote : FIELDS.parentNote;
       const note = text(central.get(header));
       if (!note) throw new Error('Enter ' + header + ' first.');
-      lines.push(note); powerSchoolLines.push(note);
+      lines.push(note);
+      const who = attempt && typeof ATTEMPT_STREAK !== 'undefined' ? ATTEMPT_STREAK.recipients(note, names(central)) : [];
+      if (who.length) {
+        lines[0] = '-- ' + label + ' [' + ATTEMPT_STREAK.attemptTag(who) + ']';
+        powerSchoolLines.push('To: ' + ATTEMPT_STREAK.listWho(who));
+      }
+      powerSchoolLines.push(note);
     } else {
       FIELDS.notes.forEach(([header, category, powerSchoolLabel]) => {
         const note = text(central.get(header));
@@ -142,14 +151,20 @@ const ECC_LOG = (() => {
       note: lines.join('\n'), powerSchoolNote: powerSchoolLines.join('\n')};
   }
 
-  /** Written from ECC Contact History and dated today. Reads no other field. */
+  /** Learning Coach and student first names, for "Hi Tameika" greetings. */
+  function names(central) {
+    const read = header => { try { return text(central.get(header)); } catch (_) { return ''; } };
+    return {lc: read('Learning Coach'), student: read('Preferred Name')};
+  }
+
+  /** Written from ECC Contact History and dated today. */
   function fiveAttemptEntry(central, ss) {
     if (typeof ATTEMPT_STREAK === 'undefined') throw new Error('Add AttemptStreak.gs to log 5+ attempts.');
     const state = ATTEMPT_STREAK.status(central.get(FIELDS.history));
     const reason = ATTEMPT_STREAK.notDueReason(state);
     if (reason) throw new Error('No 5+ Attempt Log is due: ' + reason);
     const label = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'M/d/yyyy');
-    const note = ATTEMPT_STREAK.summary(state);
+    const note = ATTEMPT_STREAK.summary(state, names(central));
     return {type: FIVE, date: label, entryDate: dateNumber(label.match(/^(\d+)\/(\d+)\/(\d+)$/)),
       note: '-- ' + label + ' [' + FIVE + ']\n' + note, powerSchoolNote: note};
   }

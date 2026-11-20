@@ -253,3 +253,61 @@ test('Attempt Streak with a formula stops the refresh with an explanation', () =
   f.formulas[0][f.headers.indexOf('Attempt Streak')] = '=1';
   assert.throws(() => f.streak.recolor(true), /must not contain formulas/);
 });
+
+test('recipients: codes anywhere, words only on label and greeting lines', () => {
+  const {streak} = fixture();
+  const names = {lc: 'Tameika Moore', student: 'RJ Hager'};
+  const who = note => plain(streak.recipients(note, names));
+  assert.deepEqual(who('LC Voicemail: call back to plan.\nParentSquare: Hello Learning Coach,'), ['LC']);
+  assert.deepEqual(who('Email to student RJ Hager:\nHi RJ,\nbody\nEmail to LC Tameika Moore (Mother):\nHi Tameika,'), ['student', 'LC']);
+  assert.deepEqual(who('ParentSquare:\nHi Tameika, quick grade update.'), ['LC']);
+  assert.deepEqual(who('EC voicemail for Danielle Hayes: call back'), ['EC']);
+  assert.deepEqual(who('Called LG, no answer'), ['LG']);
+  assert.deepEqual(who('Email to legal guardian:\nHello,'), ['LG']);
+  assert.deepEqual(who('Voicemail for Danielle Hayes [Relative]: call back'), [], 'a relationship alone is not EC or LG');
+  assert.deepEqual(who('Hello Learning Coach,\nPlease check with your student and ask your learning coach.'), ['LC'],
+    'body text does not add the student');
+  assert.deepEqual(who('Did not join homeroom'), []);
+  assert.deepEqual(who('ECC check missed'), [], 'ECC is not EC');
+});
+
+test('5+ log names who each attempt went to; each attempt PowerSchool note starts with To:', () => {
+  const f = fixture();
+  f.set(0, 'ECC Contact History', [
+    '-- 10/22/2026 [Attempt]', 'EC Voicemail for Danielle Hayes [Relative]: call back', '',
+    '-- 10/21/2026 [Attempt]', 'ParentSquare:', 'Hello Learning Coach,', '',
+    '-- 10/20/2026 [Attempt]', 'Email to student:', 'Hi Student,', '',
+    '-- 10/19/2026 [Attempt]', 'Called LG, no answer', '',
+    '-- 10/16/2026 [Attempt]', 'Did not join homeroom', '',
+    '-- 10/1/2026 [Conversation]', 'Fine'].join('\n'));
+  f.set(2, 'New Attempt Student Contact', 'LC Voicemail: please call back');
+  const review = f.bulk.review();
+  const five = review.entries.find(e => e.type === FIVE);
+  assert.match(five.note, /10\/16 absent from live class; 10\/19 phone call\/voicemail to LG; 10\/20 email to student; 10\/21 ParentSquare message to LC; 10\/22 phone call\/voicemail to EC\./);
+  assert.match(five.note, /\nContacted: student, LC, LG and EC\.\nNo response received\.$/);
+  const result = f.bulk.archive(review.token, f.all(review));
+  const attempt = result.links.map(f.decode).find(p => p.studentNumber === '33');
+  assert.equal(attempt.note, 'Attempt opening | To: LC | LC Voicemail: please call back');
+  assert.equal(f.get(2, 'ECC Contact History'), '-- 10/23/2026 [Attempt LC]\nLC Voicemail: please call back',
+    'the header names who; the note is kept as written');
+});
+
+test('[Attempt LC] headers count as attempts, and header codes win over the note', () => {
+  const {streak} = fixture();
+  const history = [
+    '-- 11/20/2026 [Attempt LC]', 'ParentSquare:', 'Hi Tameika,', '',
+    '-- 11/19/2026 [Attempt Student, LC]', 'Email to student RJ Hager:', '',
+    '-- 11/16/2026 [Attempt EC]', 'Voicemail for Danielle Hayes [Relative]: call back', '',
+    '-- 11/13/2026 [attempt lg]', 'Called, no answer', '',
+    '-- 11/5/2026 [Attempt]', 'Hello Scholar,', '',
+    '-- 10/15/2026 [Conversation]', 'Fine'].join('\n');
+  const state = streak.status(history);
+  assert.equal(state.count, 5); assert.equal(state.color, 'red'); assert.equal(state.lastSuccess, '10/15/2026');
+  assert.deepEqual(plain(streak.entries(history).map(e => [e.type, e.who])), [
+    ['Attempt', ['LC']], ['Attempt', ['student', 'LC']], ['Attempt', ['EC']], ['Attempt', ['LG']],
+    ['Attempt', []], ['Conversation', []]]);
+  assert.match(streak.summary(state, {lc: 'Tameika Moore', student: 'RJ Hager'}),
+    /11\/5 email to student; 11\/13 phone call\/voicemail to LG; 11\/16 phone call\/voicemail to EC; 11\/19 email to student and LC; 11\/20 ParentSquare message to LC\.\nContacted: student, LC, LG and EC\./);
+  assert.equal(streak.attemptTag(['student', 'LC']), 'Attempt Student, LC');
+  assert.equal(streak.attemptTag([]), 'Attempt');
+});
