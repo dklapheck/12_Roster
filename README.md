@@ -52,8 +52,8 @@ Setup, once:
    `Parent Contact` in **Workflow**. Copy the three date-field cells and any
    Opening Log Text from the ECC rows. Leave **Log Type value** and **Subtype
    value** blank to choose them in PowerSchool each time, or fill them with the
-   extension's capture tool (**Parent Contact (successful)** →
-   **Copy Type/Subtype for Settings**).
+   values PowerSchool Helper 3.7.1 shows after you choose them by hand
+   (its **Copy** buttons).
 2. Install the updated `LogECC.gs`, `EccBulk.gs`, `EccBulkDialog.html`,
    `EccPowerSchool.gs` and `Menus.gs`, then run `installRosterTools` once. It
    renames the **ECC Attempt Date** header to **Contact Date** (only that
@@ -107,8 +107,10 @@ you to uncheck the log.
 The log uses the **5+ Attempts** row of PowerSchoolSettings on Info (its own
 Log Type and Subtype, or both blank to choose them in PowerSchool each time).
 The row must sit directly under the other workflow rows with no blank row
-between. PowerSchool Helper fills it like a Parent Contact log: it keeps the
-subtype's template text, and its status button says "Parent Contact".
+between. PowerSchool Helper fills it like a Parent Contact log and keeps the
+subtype's template text. With PowerSchool Helper 3.7.1 or later, its status
+button says "5+ Attempts", and when Log Type and Subtype are blank it shows the
+values you chose with Copy buttons, so you can paste them into this row.
 
 The script owns the fill color of the ECC Contact History column. Colors update
 after every archive; after editing a history cell by hand, run **Update →
