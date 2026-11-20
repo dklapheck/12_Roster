@@ -1,5 +1,8 @@
-/** LogECC v4.1 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
+/** LogECC v4.2 for 12RosterORN. Requires Config.gs, MasterSave.gs, EccPowerSchool.gs.
  * Menus are built by Menus.gs.
+ * v4.2: 5+ Attempt Log entries (needs AttemptStreak.gs). The script writes the
+ * note from ECC Contact History and dates it today; no Master cell is used.
+ * Archiving recolors ECC Contact History.
  * v4.1: Parent Contact entries (successful parent contact from Parent
  * Communication) and the ECC Attempt Date column renamed to Contact Date,
  * which dates both attempts and parent contacts. installRosterTools renames
@@ -11,6 +14,7 @@
  * attempts both go there, each starting with a header line:
  *     -- 10/5/2026 [Conversation]        -- 10/2/2026 [Attempt]
  * Parent contacts use the same timeline:   -- 10/6/2026 [Parent Contact]
+ * So do 5+ attempt logs:                   -- 11/20/2026 [5+ Attempt Log]
  * A new entry is placed by its own date (ECC Date or Contact Date), so an
  * older attempt archived late still lands in the right spot.
  *
@@ -38,8 +42,12 @@ const ECC_LOG = (() => {
   const TYPES = Object.freeze({
     'Conversation': {workflow: 'ECC Conversation', handoff: 'ecc'},
     'Attempt': {workflow: 'ECC Attempt', handoff: 'ecc'},
-    'Parent Contact': {workflow: 'Parent Contact', handoff: 'parent'}
+    'Parent Contact': {workflow: 'Parent Contact', handoff: 'parent'},
+    // The 'parent' handoff accepts configured or manually chosen Type/Subtype
+    // and keeps any PowerSchool template text, so it suits this log too.
+    '5+ Attempt Log': {workflow: '5+ Attempts', handoff: 'parent'}
   });
+  const FIVE = '5+ Attempt Log';
   function typeInfo(type) {
     if (!Object.prototype.hasOwnProperty.call(TYPES, type)) throw new Error('Unknown ECC entry type.');
     return TYPES[type];
@@ -108,6 +116,7 @@ const ECC_LOG = (() => {
   /** Shared formatter for individual and bulk logging. Dates are never changed. */
   function readEntry(central, type, ss) {
     typeInfo(type);
+    if (type === FIVE) return fiveAttemptEntry(central, ss);
     const attempt = type === 'Attempt', parent = type === 'Parent Contact';
     const dateHeader = attempt || parent ? FIELDS.contactDate : FIELDS.date;
     const date = central.get(dateHeader);
@@ -133,6 +142,18 @@ const ECC_LOG = (() => {
       note: lines.join('\n'), powerSchoolNote: powerSchoolLines.join('\n')};
   }
 
+  /** Written from ECC Contact History and dated today. Reads no other field. */
+  function fiveAttemptEntry(central, ss) {
+    if (typeof ATTEMPT_STREAK === 'undefined') throw new Error('Add AttemptStreak.gs to log 5+ attempts.');
+    const state = ATTEMPT_STREAK.status(central.get(FIELDS.history));
+    const reason = ATTEMPT_STREAK.notDueReason(state);
+    if (reason) throw new Error('No 5+ Attempt Log is due: ' + reason);
+    const label = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'M/d/yyyy');
+    const note = ATTEMPT_STREAK.summary(state);
+    return {type: FIVE, date: label, entryDate: dateNumber(label.match(/^(\d+)\/(\d+)\/(\d+)$/)),
+      note: '-- ' + label + ' [' + FIVE + ']\n' + note, powerSchoolNote: note};
+  }
+
   /** Repeated entries are intentional; teachers clear source notes manually. */
   function append(history, entry, key) {
     const updated = insertByDate(history, entry.note, entry.entryDate);
@@ -143,6 +164,10 @@ const ECC_LOG = (() => {
   }
 
   // ---- archive -----------------------------------------------------------
+  /** ECC Contact History colors (AttemptStreak.gs). Never undoes a save. */
+  function recolor() {
+    if (typeof ATTEMPT_STREAK !== 'undefined') ATTEMPT_STREAK.recolorQuietly();
+  }
   function archive(type, openPowerSchool) {
     const ss = SpreadsheetApp.getActiveSpreadsheet(), clock = CONFIG.timer();
     let payload, archived = false, studentNumber = '';
@@ -177,11 +202,14 @@ const ECC_LOG = (() => {
           note: payload.note, outcome: payload.outcome}, settings);
         clock.lap('dialog');
       }
-      ss.toast((type === 'Parent Contact' ? 'Parent contact' : 'ECC entry') + ' saved to ECC Contact History.' +
+      recolor();
+      ss.toast((type === 'Parent Contact' ? 'Parent contact' : type === FIVE ? '5+ Attempt Log' : 'ECC entry') +
+        ' saved to ECC Contact History.' +
         (payload.nearLimit ? ' History is close to the cell size limit.' : ''), 'ECC Tools', 6);
       CONFIG.log('INFO', action, key, 'Entry archived to Master.', JSON.stringify({type, ms: clock.done()}));
       return payload;
     } catch (error) {
+      if (archived) recolor();
       const message = (archived ? 'Entry is saved; PowerSchool did not open. ' : 'ECC archive failed. ') + error.message;
       CONFIG.log('ERROR', action, studentNumber, message, CONFIG.errorDetails(error));
       ss.toast(message, 'ECC needs attention', 12);
@@ -217,7 +245,7 @@ const ECC_LOG = (() => {
     });
   }
   return Object.freeze({archive, validate, readEntry, append, valueReader, renameContactDateHeader,
-    typeInfo, TYPES, FIELDS});
+    typeInfo, recolor, TYPES, FIELDS, FIVE});
 })();
 
 function archiveEccConversation() { return ECC_LOG.archive('Conversation', false); }
@@ -226,3 +254,4 @@ function archiveEccAttempt() { return ECC_LOG.archive('Attempt', false); }
 function archiveEccAttemptAndOpenPowerSchool() { return ECC_LOG.archive('Attempt', true); }
 function archiveParentContact() { return ECC_LOG.archive('Parent Contact', false); }
 function archiveParentContactAndOpenPowerSchool() { return ECC_LOG.archive('Parent Contact', true); }
+function archiveFiveAttemptLogAndOpenPowerSchool() { return ECC_LOG.archive('5+ Attempt Log', true); }

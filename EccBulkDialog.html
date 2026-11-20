@@ -69,7 +69,8 @@
       const picked = selected(), students = new Set(picked.map(row => row.entry.studentNumber)).size;
       const count = type => picked.filter(row => row.entry.type === type).length;
       byId('summary').textContent = students + ' students selected · ' + count('Conversation') +
-        ' conversations · ' + count('Attempt') + ' attempts · ' + count('Parent Contact') + ' parent contacts';
+        ' conversations · ' + count('Attempt') + ' attempts · ' + count('Parent Contact') + ' parent contacts' +
+        (count('5+ Attempt Log') ? ' · ' + count('5+ Attempt Log') + ' 5+ attempt logs' : '');
       byId('save').disabled = busy || saved || !picked.length;
     }
     function render(data) {
@@ -82,7 +83,8 @@
         box.addEventListener('change', summarize); include.append(box);
         tr.insertCell().textContent = entry.label + ' — ' + entry.studentNumber;
         tr.insertCell().textContent = entry.type === 'Conversation' ? 'ECC success / conversation' :
-          entry.type === 'Parent Contact' ? 'Parent contact (successful)' : 'ECC attempt';
+          entry.type === 'Parent Contact' ? 'Parent contact (successful)' :
+          entry.type === '5+ Attempt Log' ? '5+ attempt log' : 'ECC attempt';
         const date = tr.insertCell(); date.textContent = entry.date || 'Missing / invalid';
         if (entry.oldDate) {
           const flag = document.createElement('div'); flag.textContent = 'Older than today'; flag.className = 'old'; date.append(flag);
