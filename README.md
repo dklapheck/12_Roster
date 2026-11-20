@@ -112,6 +112,56 @@ dates cancel the selected batch before saving. Sorts are supported because
 students are matched by Student Number. Script saves share the roster's lock
 and rollback path; direct manual sheet edits are not blocked by that lock.
 
-Archive and Log All ECC and Open Student Demographics are both at the top of
-Update and repeated under **ECC & Demographics**. The remaining submenus are
-Call / SCC, Refresh Roster Data, Grade Report Photos, WIG, and Maintenance.
+Archive and Log All ECC, Log selected student's conversation, Log selected
+student's attempt, and Open Student Demographics are at the top of Update and
+repeated under **ECC & Demographics**. Select one student's row on Master before
+using either individual logging shortcut. Each archives the existing dated
+notes into ECC Contact History through `saveToMaster()`, then shows the existing
+PowerSchool handoff dialog. Current notes and dates stay on Master. Close all
+other PowerSchool student tabs before opening the handoff, review the student
+and fields, and submit manually. Retrying the archive action archives the notes
+again; it does not detect whether the PowerSchool log was submitted.
+
+The remaining submenus are Call / SCC, Refresh Roster Data, Grade Report Photos,
+WIG, and Maintenance. Install the updated `Menus.gs` and reload the spreadsheet
+to see the new quick-access items. The existing `LogECC.gs` and
+`EccPowerSchool.gs` functions are reused without changing the extension handoff.
+
+## WIG snapshots available Monday
+
+Install the updated `WigSnapshots.gs`. **Update → WIG → Preview this week's
+snapshot** and **Save this week's snapshot** target the Tuesday date belonging
+to the current Monday–Sunday week, using the spreadsheet's timezone. For
+example, Monday, November 2, 2026 targets the existing November 3 row, just as
+Tuesday, November 3 does. Sunday, November 1 still targets October 27. Keep the
+Tuesday labels in WIG column A; no date migration is needed.
+
+Snapshots remain manual. Preview changes no cells. Save still requires exactly
+one matching dated row and preserves a week that already contains snapshot
+data or formulas, including when a Monday snapshot is run again on Tuesday.
+Missing rows are reported rather than added automatically.
+
+The **List of Students Chronically Absent** shows each student's name, number,
+and days needed to become compliant. Last-activity dates are omitted from both
+the list and its attendance note; lesson-attempt counts remain in the note.
+Sync `WigSnapshots.gs` to apply this to future previews and snapshots. Existing
+snapshots are not rewritten by Save. After syncing, preview an empty week and
+check that the list and attendance note omit activity dates while retaining
+days needed and available lesson-attempt counts.
+
+GitHub changes do not deploy automatically. Compare the two changed `.gs`
+files with the bound Apps Script project before uploading them, retaining any
+live-only edits. This update does not change PowerSchool settings or its URL
+payload format.
+
+Browser checks after syncing and reloading:
+
+- Preview WIG on Monday: the report should name the next day's Tuesday row and
+  leave cells unchanged. Save an empty week when ready, then preview/save again
+  to confirm the existing snapshot is preserved.
+- Select one Master student with valid ECC dates and notes. Try the conversation
+  shortcut, then the attempt shortcut separately. Confirm the correct entry is
+  archived with its existing date and that the PowerSchool dialog opens.
+- Keep only one PowerSchool student tab open. Verify the student number, date,
+  workflow settings, and one-line notes before submitting manually, then verify
+  the saved log and close that tab before testing the other shortcut.
